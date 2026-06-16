@@ -1,0 +1,8 @@
+healthy:
+  description: All checks below thresholds.
+warning:
+  description: Disk and systemd warning scenario used by default.
+critical:
+  description: Critical load, memory, and disk scenario.
+unknown:
+  description: Disk check timeout scenario.

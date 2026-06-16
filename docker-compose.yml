@@ -1,0 +1,25 @@
+services:
+  fleetops:
+    profiles: ["production"]
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - ./config/hosts.yml:/app/config/hosts.yml:ro
+      - ./snapshots:/tmp/fleetops
+      - ${FLEETOPS_SSH_PRIVATE_KEY_PATH:-./missing_ssh_key}:/run/secrets/fleetops_ssh_key:ro
+      - ${FLEETOPS_SSH_KNOWN_HOSTS_PATH:-./missing_known_hosts}:/run/secrets/fleetops_known_hosts:ro
+    restart: unless-stopped
+
+  fleetops-demo:
+    profiles: ["demo"]
+    build: .
+    environment:
+      FLEETOPS_DEMO_MODE: "true"
+      FLEETOPS_CONFIG_PATH: /app/config/hosts.yml
+      FLEETOPS_TELEGRAM_BOT_TOKEN: ${FLEETOPS_TELEGRAM_BOT_TOKEN:-replace-with-telegram-bot-token}
+    volumes:
+      - ./config/hosts.example.yml:/app/config/hosts.yml:ro
+      - ./snapshots:/tmp/fleetops
+    restart: unless-stopped
+

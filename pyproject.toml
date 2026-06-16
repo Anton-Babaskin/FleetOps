@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fleetops"
+version = "0.1.0"
+description = "Open-source, self-hosted, agentless infrastructure diagnostics for Linux server fleets."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Anton Babaskin" }]
+dependencies = [
+  "aiogram>=3.7,<4",
+  "asyncssh>=2.14,<3",
+  "pydantic>=2.7,<3",
+  "pydantic-settings>=2.2,<3",
+  "PyYAML>=6.0,<7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0,<9",
+  "pytest-asyncio>=0.23,<1",
+  "ruff>=0.5,<1",
+]
+
+[project.scripts]
+fleetops = "fleetops.main:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["fleetops"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-p no:cacheprovider"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+cache-dir = ".ruff_cache_local"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "C4", "SIM", "RUF"]
+ignore = ["RUF012"]
