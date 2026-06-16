@@ -6,7 +6,7 @@ host:
 
 telegram:
   allowed_user_ids:
-    - 6874091762
+    - 123456789
 
 thresholds:
   load:
