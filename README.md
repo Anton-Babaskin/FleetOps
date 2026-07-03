@@ -2,6 +2,8 @@
 
 FleetOps is open-source, self-hosted, agentless infrastructure diagnostics for Linux server fleets.
 
+[Русская версия](README.ru.md)
+
 Current status: **v0.1.0**. This first release intentionally supports one configured Linux server. Multi-host fleet collection is planned for v0.2.
 
 ## Features
