@@ -8,6 +8,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_docker,
     format_greylist,
     format_health,
+    format_incident,
     format_journal,
     format_mail,
     format_mail_delivery,
@@ -365,6 +366,54 @@ def test_audit_formatter_summarizes_findings() -> None:
     assert "🔴 Result: CRITICAL" in text
     assert "Critical: 1" in text
     assert "SSH root login" in text
+
+
+def test_incident_formatter_summarizes_sections() -> None:
+    text = format_incident(
+        "\n".join(
+            [
+                "### INCIDENT SUMMARY",
+                "host=demo (demo.example.com)",
+                "overall=warning",
+                "since=24h",
+                "collected_at=2026-07-03T10:00:00Z",
+                "",
+                "### HEALTH CHECKS",
+                "load|ok|0.2 / 0.1 / 0.1",
+                "disk|warning|/ is 88% full",
+                "",
+                "### SERVICES",
+                "backup.service loaded failed failed Demo backup failure",
+                "",
+                "### PORTS",
+                'tcp LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))',
+                "",
+                "### MAIL_STATS",
+                "== MAIL STATS SUMMARY ==",
+                "sent=4",
+                "rejected=3",
+                "greylisted=1",
+                "bounced=0",
+                "== TOP REJECT REASONS ==",
+                "3 Relay access denied",
+                "",
+                "### QUEUE",
+                "Mail queue is empty",
+                "",
+                "### SECURITY",
+                "ufw.service active",
+            ]
+        )
+    )
+
+    assert "Incident report" in text
+    assert "Overall: WARNING" in text
+    assert "disk: / is 88% full" in text
+    assert "backup.service" in text
+    assert "0.0.0.0:22" in text
+    assert "Rejected: 3" in text
+    assert "Relay access denied" in text
+    assert "Mail queue is empty" in text
 
 
 def test_docker_formatter_limits_raw_output() -> None:

@@ -423,7 +423,12 @@ while IFS= read -r line; do
     [[ "$reason_key" = "Greylisted" ]] && greylisted=$((greylisted + 1))
     reject_reasons[$reason_key]=$(( ${reject_reasons[$reason_key]:-0} + 1 ))
   fi
-done < <(mail_stream | tail -n 20000 | filter_since)
+done < <(
+  mail_stream \
+    | tail -n 20000 \
+    | filter_since \
+    | grep -E "postfix/qmgr.*from=<|reject: RCPT from|status=(sent|bounced|deferred)" || true
+)
 
 echo "== MAIL STATS SUMMARY =="
 echo "sent=$sent"

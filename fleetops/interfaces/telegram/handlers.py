@@ -20,6 +20,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_greylist,
     format_greylist_detail,
     format_health,
+    format_incident,
     format_journal,
     format_mail,
     format_mail_delivery,
@@ -181,6 +182,7 @@ def build_router(
                     "/updates - show package update hints",
                     "/security - show sessions, logins, firewall/security services",
                     "/audit - run read-only security and mail audit",
+                    "/incident [1h|24h|7d] - build a compact incident report",
                     "/snapshot - create a redacted diagnostic snapshot",
                     "/status - show bot/runtime status",
                     "/whoami - show your numeric Telegram ID",
@@ -471,6 +473,19 @@ def build_router(
             format_audit(await diagnostics_service.get_audit()),
             reply_markup=details_keyboard("audit"),
         )
+
+    @router.message(Command("incident"))
+    async def incident(message: Message) -> None:
+        if not is_allowed(message):
+            await message.answer("Access denied.")
+            return
+        since = parse_since_arg(message) or "24h"
+        try:
+            raw = await diagnostics_service.get_incident(since)
+        except ValueError as exc:
+            await message.answer(f"Bad time window: {exc}")
+            return
+        await answer_chunks(message, format_incident(raw))
 
     @router.callback_query(F.data == "details:services")
     async def services_details(callback: CallbackQuery) -> None:

@@ -135,6 +135,7 @@ fleetops reboots
 fleetops updates
 fleetops security
 fleetops audit
+fleetops incident --since 24h
 fleetops snapshot
 ```
 
@@ -170,6 +171,7 @@ fleetops --json disk
 - `/queue` - mail queue
 - `/security` - sessions, logins, firewall/security services
 - `/audit` - read-only security/mail audit
+- `/incident 24h` - компактный incident report по health, services, ports, security, mail и queue
 - `/snapshot` - redacted diagnostic snapshot
 - `/status` - статус бота
 - `/whoami` - numeric Telegram ID
@@ -321,13 +323,16 @@ fleetops mail-stats --since 24h
 
 ### 4. 🚨 Incident reports
 
-Одна команда должна собирать короткий отчет для администратора:
+Базовая команда уже доступна:
 
 ```text
 /incident
+fleetops incident --since 24h
 ```
 
 Внутри: health, failed services, disk, top processes, ports, security, mail stats, queue.
+
+Следующий слой: сделать severity scoring и короткую строку "что чинить первым".
 
 ### 5. 👀 Watch mode
 
@@ -363,7 +368,7 @@ Telegram alerts можно добавить позже, после аккура�
 
 1. **Mail filters** - самый полезный прирост прямо сейчас.
 2. **Time windows** - чтобы статистика была не только по хвосту логов, а за понятный период.
-3. **Incident report** - одна команда для быстрой диагностики.
+3. **Incident report scoring** - подсказка "что чинить первым" поверх готового отчета.
 4. **Multi-host mode** - уже после того, как один сервер станет очень удобным.
 
 Так мы быстро доведем MVP до инструмента, который реально помогает в ежедневной админке.

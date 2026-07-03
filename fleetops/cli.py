@@ -14,6 +14,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_docker_logs,
     format_greylist,
     format_health,
+    format_incident,
     format_journal,
     format_mail,
     format_mail_delivery,
@@ -99,6 +100,7 @@ def build_parser() -> argparse.ArgumentParser:
         "updates",
         "security",
         "audit",
+        "incident",
         "snapshot",
         "status",
     ):
@@ -107,6 +109,12 @@ def build_parser() -> argparse.ArgumentParser:
             command_parser.add_argument(
                 "--since",
                 help="limit mail log analysis to a window such as 30m, 1h, 24h, or 7d",
+            )
+        if command == "incident":
+            command_parser.add_argument(
+                "--since",
+                default="24h",
+                help="mail/statistics window for incident reports, such as 1h, 24h, or 7d",
             )
         if command in search_commands:
             command_parser.add_argument("query", help="email, domain, IP, or text to search for")
@@ -194,6 +202,7 @@ async def run_cli(
         "updates": diagnostics_service.get_updates,
         "security": diagnostics_service.get_security,
         "audit": diagnostics_service.get_audit,
+        "incident": lambda: diagnostics_service.get_incident(args.since),
     }
     formatters = {
         "services": format_services,
@@ -217,6 +226,7 @@ async def run_cli(
         "updates": format_updates,
         "security": format_security,
         "audit": format_audit,
+        "incident": format_incident,
     }
     search_modes = {
         "mail-search": "any",

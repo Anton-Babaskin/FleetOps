@@ -178,6 +178,7 @@ snapshot:
 - `/updates` lists pending package updates when a supported package manager is installed.
 - `/security` summarizes sessions, recent logins, firewall status, and security services.
 - `/audit` runs a bounded read-only security and mail audit with PASS/WARN/CRITICAL summary.
+- `/incident [1h|24h|7d]` builds a compact incident report across health, services, ports, security, mail, and queue.
 - `/snapshot` creates a redacted incident snapshot and sends it as a text file.
 - `/status` reports bot mode, target host, allowlist size, and uptime.
 - `/whoami` returns the caller's numeric Telegram user ID.
@@ -222,6 +223,7 @@ fleetops reboots
 fleetops updates
 fleetops security
 fleetops audit
+fleetops incident --since 24h
 fleetops snapshot
 fleetops status
 fleetops bot

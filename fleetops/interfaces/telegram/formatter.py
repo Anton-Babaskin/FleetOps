@@ -702,6 +702,112 @@ def format_docker_logs(raw: str) -> str:
     return format_raw_report("🐳 Docker logs", raw, max_lines=70)
 
 
+def _parse_marker_sections(raw: str) -> dict[str, list[str]]:
+    sections: dict[str, list[str]] = {}
+    current = ""
+    for line in raw.splitlines():
+        if line.startswith("### "):
+            current = line.removeprefix("### ").strip()
+            sections[current] = []
+            continue
+        if current:
+            sections[current].append(line)
+    return sections
+
+
+def _value_from_section(lines: list[str], key: str, default: str = "n/a") -> str:
+    prefix = f"{key}="
+    for line in lines:
+        if line.startswith(prefix):
+            return line.split("=", 1)[1]
+    return default
+
+
+def _limited_nonempty(lines: list[str], limit: int) -> list[str]:
+    visible = [line for line in lines if line.strip()]
+    output = visible[:limit]
+    if len(visible) > limit:
+        output.append(f"... {len(visible) - limit} more line(s)")
+    return output
+
+
+def format_incident(raw: str) -> str:
+    redacted = redact(raw).strip()
+    if not redacted:
+        return "🚨 Incident report\n\nNo incident output returned."
+    if redacted.startswith("ERROR:"):
+        return f"🚨 Incident report\n\n{redacted}"
+
+    sections = _parse_marker_sections(redacted)
+    summary = sections.get("INCIDENT SUMMARY", [])
+    health = sections.get("HEALTH CHECKS", [])
+    overall = _value_from_section(summary, "overall", "unknown")
+    result_icon = "🔴" if overall == "critical" else "🟡" if overall == "warning" else "🟢"
+    lines = [
+        "🚨 Incident report",
+        "",
+        f"{result_icon} Overall: {overall.upper()}",
+        f"Host: {_value_from_section(summary, 'host')}",
+        f"Window: {_value_from_section(summary, 'since')}",
+    ]
+
+    if health:
+        lines.extend(["", "🩺 Health:"])
+        for item in [line for line in health if line.strip()][:8]:
+            parts = item.split("|", 2)
+            if len(parts) == 3:
+                name, status, summary_text = parts
+                icon = "🔴" if status == "critical" else "🟡" if status == "warning" else "🟢"
+                lines.append(f"• {icon} {name}: {summary_text}")
+            else:
+                lines.append(f"• {item}")
+
+    services = sections.get("SERVICES", [])
+    failed_services = [line for line in services if " failed " in line or " failed" in line]
+    if failed_services:
+        lines.extend(["", "🔴 Failed services:", *_limited_nonempty(failed_services, 6)])
+
+    ports = sections.get("PORTS", [])
+    public_ports = [
+        line
+        for line in ports
+        if "LISTEN" in line and "127.0.0.1:" not in line and "[::1]:" not in line
+    ]
+    if public_ports:
+        lines.extend(["", "🌐 Public listeners:", *_limited_nonempty(public_ports, 6)])
+
+    mail_stats = "\n".join(sections.get("MAIL_STATS", []))
+    if mail_stats.strip():
+        values, mail_sections = _parse_mail_stats(mail_stats)
+        lines.extend(
+            [
+                "",
+                "📮 Mail 24h:",
+                f"• Sent: {values.get('sent', '0')}",
+                f"• Rejected: {values.get('rejected', '0')}",
+                f"• Greylisted: {values.get('greylisted', '0')}",
+                f"• Bounced: {values.get('bounced', '0')}",
+            ]
+        )
+        reject_reasons = mail_sections.get("TOP REJECT REASONS", [])
+        if reject_reasons:
+            lines.extend(["", "⛔ Reject reasons:", *_limited_nonempty(reject_reasons, 5)])
+
+    queue = sections.get("QUEUE", [])
+    if queue:
+        lines.extend(["", "📬 Queue:", *_limited_nonempty(queue, 5)])
+
+    security = sections.get("SECURITY", [])
+    if security:
+        lines.extend(["", "🛡️ Security:", *_limited_nonempty(security, 8)])
+
+    top = sections.get("TOP", [])
+    if top:
+        lines.extend(["", "📈 Top:", *_limited_nonempty(top, 10)])
+
+    return "\n".join(lines)
+
+
 def _audit_count(raw: str, label: str) -> int:
     for line in raw.splitlines():
         if line.startswith(f"{label}:"):
