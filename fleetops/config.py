@@ -14,6 +14,7 @@ class EnvSettings(BaseSettings):
     telegram_bot_token: str | None = None
     ssh_private_key_path: Path | None = None
     ssh_known_hosts_path: Path | None = None
+    ssh_password: str | None = None
 
 
 class HostConfig(BaseModel):

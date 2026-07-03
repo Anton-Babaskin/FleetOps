@@ -1,6 +1,7 @@
 .env
 config/hosts.yml
 config/*.local.yml
+config/known_hosts.local
 *.pem
 *.key
 id_rsa

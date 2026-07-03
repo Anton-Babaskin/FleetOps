@@ -9,7 +9,8 @@ Current status: **v0.1.0**. This first release intentionally supports one config
 - Agentless SSH collection with `asyncssh`
 - Deterministic checks for load, memory, disk usage, and failed systemd units
 - Versioned Pydantic JSON health contract
-- Telegram bot commands: `/start`, `/health`, `/snapshot`
+- Terminal-first CLI for Linux, Docker, systemd, and mail diagnostics
+- Optional Telegram bot control surface for the same diagnostics
 - Numeric Telegram user ID allowlist
 - Demo mode without SSH
 - Docker Compose deployment
@@ -30,6 +31,23 @@ flowchart TD
 ```
 
 Core business logic does not depend on Telegram.
+
+## Project Layout
+
+```text
+fleetops/
+  checks/                 Health collectors for load, memory, disk, and systemd
+  collectors/             Demo and SSH read-only collection backends
+  domain/                 Pydantic models and status enums
+  interfaces/telegram/    Telegram bot handlers and message formatters
+  rules/                  Health status rules
+  security/               Redaction helpers
+  services/               Application services for health, diagnostics, and snapshots
+  cli.py                  Terminal CLI command dispatcher
+  main.py                 Runtime entrypoint
+config/                   Example host configuration
+tests/                    Unit tests and fixtures
+```
 
 ## Security Model
 
@@ -131,9 +149,77 @@ snapshot:
 
 - `/start` checks access and confirms the bot is ready.
 - `/health` collects current health and returns a readable summary.
+- `/load`, `/memory`, `/disk`, and `/systemd` return focused check details.
+- `/services` summarizes running and failed systemd services.
+- `/journal` returns a bounded, redacted warning/error journal view.
+- `/ports` lists listening TCP/UDP sockets with a fixed limit.
+- `/docker` reports Docker containers and Docker disk usage when Docker is installed.
+- `/dockerlogs` returns bounded logs for up to three running Docker containers.
+- `/mail` summarizes common mail services such as postfix, dovecot, nginx, and DKIM/DMARC.
+- `/maildns` checks hostname, Mail-in-a-Box identity hints, MX, A/AAAA, SPF, and DMARC.
+- `/mailtls` reports local postfix/dovecot certificate subject, issuer, and validity dates.
+- `/maillogs` returns parsed send/reject/defer/bounce mail flow events.
+- `/mailstats` reports aggregate sender domains, recipient domains, routes, relays, volume, and reject reasons.
+- `/mailrejects` returns rejected and greylisted mail events with sender, recipient, client, and reason.
+- `/maildelivery` returns sent, deferred, and bounced delivery events with relay and SMTP detail.
+- `/mailservice` returns bounded mail service lifecycle/configuration logs.
+- `/greylist` summarizes postgrey greylist/pass/reject activity and recent events.
+- `/queue` reports the mail queue when postqueue is installed.
+- `/top` returns a bounded top snapshot.
+- `/processes` shows top CPU and memory processes.
+- `/reboots` reports uptime and recent reboot/shutdown history.
+- `/updates` lists pending package updates when a supported package manager is installed.
+- `/security` summarizes sessions, recent logins, firewall status, and security services.
+- `/audit` runs a bounded read-only security and mail audit with PASS/WARN/CRITICAL summary.
 - `/snapshot` creates a redacted incident snapshot and sends it as a text file.
+- `/status` reports bot mode, target host, allowlist size, and uptime.
+- `/whoami` returns the caller's numeric Telegram user ID.
 
 Unauthorized users receive only `Access denied.`.
+
+## Terminal CLI
+
+FleetOps is terminal-first. The Telegram bot is an optional remote control surface over the
+same diagnostics.
+
+```bash
+fleetops health
+fleetops load
+fleetops memory
+fleetops disk
+fleetops systemd
+fleetops services
+fleetops journal
+fleetops ports
+fleetops docker
+fleetops docker-logs
+fleetops mail
+fleetops mail-dns
+fleetops mail-tls
+fleetops mail-logs
+fleetops mail-stats
+fleetops mail-rejects
+fleetops mail-delivery
+fleetops mail-service-logs
+fleetops greylist
+fleetops queue
+fleetops top
+fleetops processes
+fleetops reboots
+fleetops updates
+fleetops security
+fleetops audit
+fleetops snapshot
+fleetops status
+fleetops bot
+```
+
+Structured output is available for health and individual checks:
+
+```bash
+fleetops --json health
+fleetops --json disk
+```
 
 ## JSON Contract
 
