@@ -1,5 +1,21 @@
 from fleetops.collectors.base import Collector
 
+SINCE_UNITS = {"m", "h", "d"}
+
+
+def normalize_since(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    if len(normalized) < 2 or normalized[-1] not in SINCE_UNITS:
+        raise ValueError("since must look like 30m, 1h, 24h, or 7d")
+    amount = normalized[:-1]
+    if not amount.isdigit() or int(amount) <= 0:
+        raise ValueError("since must use a positive number")
+    return normalized
+
 
 class DiagnosticsService:
     def __init__(self, collector: Collector) -> None:
@@ -29,17 +45,35 @@ class DiagnosticsService:
     async def get_mail_tls(self) -> str:
         return await self.collector.collect_mail_tls()
 
-    async def get_mail_logs(self) -> str:
-        return await self.collector.collect_mail_logs()
+    async def get_mail_logs(self, since: str | None = None) -> str:
+        return await self.collector.collect_mail_logs(normalize_since(since))
 
-    async def get_mail_rejections(self) -> str:
-        return await self.collector.collect_mail_rejections()
+    async def get_mail_rejections(self, since: str | None = None) -> str:
+        return await self.collector.collect_mail_rejections(normalize_since(since))
 
-    async def get_mail_delivery(self) -> str:
-        return await self.collector.collect_mail_delivery()
+    async def get_mail_delivery(self, since: str | None = None) -> str:
+        return await self.collector.collect_mail_delivery(normalize_since(since))
 
-    async def get_mail_stats(self) -> str:
-        return await self.collector.collect_mail_stats()
+    async def get_mail_stats(self, since: str | None = None) -> str:
+        return await self.collector.collect_mail_stats(normalize_since(since))
+
+    async def get_mail_search(
+        self,
+        *,
+        mode: str,
+        query: str,
+        since: str | None = None,
+    ) -> str:
+        cleaned_query = query.strip()
+        if not cleaned_query:
+            raise ValueError("mail search query is required")
+        if mode not in {"any", "from", "to", "ip", "domain"}:
+            raise ValueError("unsupported mail search mode")
+        return await self.collector.collect_mail_search(
+            mode=mode,
+            query=cleaned_query,
+            since=normalize_since(since),
+        )
 
     async def get_mail_service_logs(self) -> str:
         return await self.collector.collect_mail_service_logs()

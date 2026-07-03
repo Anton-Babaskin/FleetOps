@@ -36,17 +36,26 @@ class Collector(Protocol):
     async def collect_mail_tls(self) -> str:
         """Collect bounded TLS certificate details for common mail endpoints."""
 
-    async def collect_mail_logs(self) -> str:
+    async def collect_mail_logs(self, since: str | None = None) -> str:
         """Collect bounded mail delivery, receive, reject, defer, and bounce logs."""
 
-    async def collect_mail_rejections(self) -> str:
+    async def collect_mail_rejections(self, since: str | None = None) -> str:
         """Collect bounded rejected mail flow events."""
 
-    async def collect_mail_delivery(self) -> str:
+    async def collect_mail_delivery(self, since: str | None = None) -> str:
         """Collect bounded sent/deferred/bounced mail flow events."""
 
-    async def collect_mail_stats(self) -> str:
+    async def collect_mail_stats(self, since: str | None = None) -> str:
         """Collect bounded aggregate Postfix mail flow statistics."""
+
+    async def collect_mail_search(
+        self,
+        *,
+        mode: str,
+        query: str,
+        since: str | None = None,
+    ) -> str:
+        """Collect bounded mail flow events matching a fixed search mode."""
 
     async def collect_mail_service_logs(self) -> str:
         """Collect bounded mail service lifecycle and configuration logs."""

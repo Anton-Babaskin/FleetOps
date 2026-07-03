@@ -119,8 +119,14 @@ fleetops docker
 fleetops docker-logs
 fleetops mail
 fleetops mail-stats
+fleetops mail-stats --since 24h
 fleetops mail-rejects
 fleetops mail-delivery
+fleetops mail-search spamhaus --since 7d
+fleetops mail-from sender@example.org --since 24h
+fleetops mail-to user@example.com --since 24h
+fleetops mail-ip 203.0.113.66 --since 7d
+fleetops mail-domain example.com --since 7d
 fleetops greylist
 fleetops queue
 fleetops top
@@ -151,10 +157,15 @@ fleetops --json disk
 - `/docker` - контейнеры и docker disk usage
 - `/dockerlogs` - bounded logs по контейнерам
 - `/mail` - почтовое меню с кнопками
-- `/mailstats` - статистика отправок, доменов, маршрутов и reject reasons
-- `/mailrejects` - rejected и greylisted события
-- `/maildelivery` - sent/deferred/bounced delivery events
-- `/maillogs` - общий parsed mail flow
+- `/mailstats 24h` - статистика отправок, доменов, маршрутов и reject reasons за период
+- `/mailrejects 24h` - rejected и greylisted события за период
+- `/maildelivery 24h` - sent/deferred/bounced delivery events за период
+- `/maillogs 24h` - общий parsed mail flow за период
+- `/mailsearch spamhaus 7d` - поиск по parsed mail events
+- `/mailfrom sender@example.org 24h` - поиск по отправителю
+- `/mailto user@example.com 24h` - поиск по получателю
+- `/mailip 203.0.113.66 7d` - поиск по IP
+- `/maildomain example.com 7d` - поиск по домену отправителя/получателя
 - `/greylist` - postgrey summary
 - `/queue` - mail queue
 - `/security` - sessions, logins, firewall/security services
@@ -174,6 +185,8 @@ FleetOps уже умеет разделять почтовую диагност�
 - ⛔ **Mail rejects** - причины отказов, client, sender, recipient, helo
 - ✅ **Mail delivery** - доставки, deferred и bounced события
 - 📊 **Mail stats** - топ доменов, маршрутов, relay, volume и reject reasons
+- 🔎 **Mail filters** - поиск по email, domain, IP и произвольному тексту
+- ⏱️ **Time windows** - окна `30m`, `1h`, `24h`, `7d` для логов и статистики
 - 🩶 **Greylist** - postgrey counters, top IP, senders и recent events
 
 Пример того, к чему стремимся в Telegram:
@@ -281,7 +294,7 @@ fleetops health --all
 
 ### 2. 🔎 Фильтры по почте
 
-Добавить точечные расследования:
+Точечные расследования уже доступны базово:
 
 ```text
 /mailsearch user@example.com
@@ -291,9 +304,11 @@ fleetops health --all
 /maildomain example.com
 ```
 
+Следующий слой: сделать fuzzy matching, группировку похожих reject reasons и выдачу краткой причины "почему письмо не дошло".
+
 ### 3. ⏱️ Временные окна
 
-Сделать статистику за период:
+Базовые окна уже доступны:
 
 ```text
 /mailstats 1h
@@ -301,6 +316,8 @@ fleetops health --all
 /mailstats 7d
 fleetops mail-stats --since 24h
 ```
+
+Следующий слой: добавить абсолютные интервалы `--from/--to` и пресеты `today`, `yesterday`.
 
 ### 4. 🚨 Incident reports
 

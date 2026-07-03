@@ -160,10 +160,15 @@ snapshot:
 - `/mail` summarizes common mail services such as postfix, dovecot, nginx, and DKIM/DMARC.
 - `/maildns` checks hostname, Mail-in-a-Box identity hints, MX, A/AAAA, SPF, and DMARC.
 - `/mailtls` reports local postfix/dovecot certificate subject, issuer, and validity dates.
-- `/maillogs` returns parsed send/reject/defer/bounce mail flow events.
-- `/mailstats` reports aggregate sender domains, recipient domains, routes, relays, volume, and reject reasons.
-- `/mailrejects` returns rejected and greylisted mail events with sender, recipient, client, and reason.
-- `/maildelivery` returns sent, deferred, and bounced delivery events with relay and SMTP detail.
+- `/maillogs [1h|24h|7d]` returns parsed send/reject/defer/bounce mail flow events.
+- `/mailstats [1h|24h|7d]` reports aggregate sender domains, routes, relays, volume, and reject reasons.
+- `/mailrejects [1h|24h|7d]` returns rejected and greylisted mail events.
+- `/maildelivery [1h|24h|7d]` returns sent, deferred, and bounced delivery events.
+- `/mailsearch <text> [1h|24h|7d]` searches parsed mail events.
+- `/mailfrom <email/domain> [1h|24h|7d]` searches by sender.
+- `/mailto <email/domain> [1h|24h|7d]` searches by recipient.
+- `/mailip <ip> [1h|24h|7d]` searches by client/relay IP.
+- `/maildomain <domain> [1h|24h|7d]` searches by sender/recipient domain.
 - `/mailservice` returns bounded mail service lifecycle/configuration logs.
 - `/greylist` summarizes postgrey greylist/pass/reject activity and recent events.
 - `/queue` reports the mail queue when postqueue is installed.
@@ -200,8 +205,14 @@ fleetops mail-dns
 fleetops mail-tls
 fleetops mail-logs
 fleetops mail-stats
+fleetops mail-stats --since 24h
 fleetops mail-rejects
 fleetops mail-delivery
+fleetops mail-search spamhaus --since 7d
+fleetops mail-from sender@example.org --since 24h
+fleetops mail-to user@example.com --since 24h
+fleetops mail-ip 203.0.113.66 --since 7d
+fleetops mail-domain example.com --since 7d
 fleetops mail-service-logs
 fleetops greylist
 fleetops queue

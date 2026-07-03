@@ -464,6 +464,8 @@ def _format_mail_events(
     redacted = redact(raw).strip()
     if not redacted:
         return f"{title}\n\n{empty_message}"
+    if redacted.startswith("ERROR:"):
+        return f"{title}\n\n{redacted}"
 
     parsed = [_parse_mail_event(line) for line in redacted.splitlines()]
     events = [event for event in parsed if event is not None]
@@ -526,6 +528,24 @@ def format_mail_delivery(raw: str) -> str:
         empty_message="No delivery/defer/bounce mail events found.",
         max_events=10,
     )
+
+
+def format_mail_search(raw: str, *, mode: str, query: str, since: str | None = None) -> str:
+    title = "🔎 Mail search"
+    result = _format_mail_events(
+        title=title,
+        raw=raw,
+        empty_message="No matching mail events found.",
+        max_events=12,
+    )
+    context = [
+        f"Mode: {mode}",
+        f"Query: {query}",
+    ]
+    if since:
+        context.append(f"Since: {since}")
+    lines = result.splitlines()
+    return "\n".join([lines[0], "", *context, *lines[1:]])
 
 
 def _parse_mail_stats(raw: str) -> tuple[dict[str, str], dict[str, list[str]]]:

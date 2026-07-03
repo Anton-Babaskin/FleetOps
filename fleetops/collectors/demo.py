@@ -210,7 +210,7 @@ class DemoCollector:
             ]
         )
 
-    async def collect_mail_logs(self) -> str:
+    async def collect_mail_logs(self, since: str | None = None) -> str:
         return "\n".join(
             [
                 "postfix/smtp[124]: ABC123: to=<user@example.com>, status=sent",
@@ -218,20 +218,20 @@ class DemoCollector:
             ]
         )
 
-    async def collect_mail_rejections(self) -> str:
+    async def collect_mail_rejections(self, since: str | None = None) -> str:
         return (
             "postfix/smtpd[125]: NOQUEUE: reject: RCPT from bad.example[203.0.113.66]: "
             "554 5.7.1 <user@example.com>: Relay access denied; "
             "from=<bad@sender.test> to=<user@example.com> proto=ESMTP helo=<bad.example>"
         )
 
-    async def collect_mail_delivery(self) -> str:
+    async def collect_mail_delivery(self, since: str | None = None) -> str:
         return (
             "postfix/smtp[124]: ABC123: to=<user@example.com>, "
             "relay=mx.example.com[203.0.113.25]:25, status=sent (250 2.0.0 ok)"
         )
 
-    async def collect_mail_stats(self) -> str:
+    async def collect_mail_stats(self, since: str | None = None) -> str:
         return "\n".join(
             [
                 "== MAIL STATS SUMMARY ==",
@@ -263,6 +263,25 @@ class DemoCollector:
                 "",
                 "== TOP VOLUME FROM DOMAINS ==",
                 "2.4 MB 18 example.org",
+            ]
+        )
+
+    async def collect_mail_search(
+        self,
+        *,
+        mode: str,
+        query: str,
+        since: str | None = None,
+    ) -> str:
+        return "\n".join(
+            [
+                "Jul  1 10:04:01 demo postfix/smtpd[125]: NOQUEUE: reject: "
+                "RCPT from bad.example[203.0.113.66]: 554 5.7.1 "
+                "<user@example.com>: Relay access denied; from=<bad@sender.test> "
+                "to=<user@example.com> proto=ESMTP helo=<bad.example>",
+                "Jul  1 10:05:01 demo postfix/smtp[126]: ABC123: "
+                "to=<user@example.com>, relay=mx.example.com[203.0.113.25]:25, "
+                "status=sent (250 ok) from=<sender.test>",
             ]
         )
 

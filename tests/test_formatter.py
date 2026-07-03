@@ -15,6 +15,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_mail_logs,
     format_mail_queue,
     format_mail_rejections,
+    format_mail_search,
     format_mail_service_logs,
     format_mail_stats,
     format_mail_tls,
@@ -299,6 +300,27 @@ def test_mail_stats_formatter_summarizes_aggregate_sections() -> None:
     assert "18  example.org" in text
     assert "example.org -> example.com -> 127.0.0.1" in text
     assert "Relay access denied" in text
+
+
+def test_mail_search_formatter_includes_query_context() -> None:
+    text = format_mail_search(
+        (
+            "Jul  1 10:04:01 box.example postfix/smtpd[125]: NOQUEUE: reject: "
+            "RCPT from bad.example[203.0.113.66]: 554 5.7.1 "
+            "<user@example.com>: Relay access denied; from=<bad@sender.test> "
+            "to=<user@example.com> proto=ESMTP helo=<bad.example>"
+        ),
+        mode="from",
+        query="sender.test",
+        since="24h",
+    )
+
+    assert "Mail search" in text
+    assert "Mode: from" in text
+    assert "Query: sender.test" in text
+    assert "Since: 24h" in text
+    assert "Rejected @ box.example" in text
+    assert "From: bad@sender.test" in text
 
 
 def test_mail_service_logs_formatter_has_title() -> None:

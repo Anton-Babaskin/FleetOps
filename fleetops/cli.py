@@ -21,6 +21,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_mail_logs,
     format_mail_queue,
     format_mail_rejections,
+    format_mail_search,
     format_mail_service_logs,
     format_mail_stats,
     format_mail_tls,
@@ -51,6 +52,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    time_window_commands = {
+        "mail-logs",
+        "mail-stats",
+        "mail-rejects",
+        "mail-delivery",
+    }
+    search_commands = {
+        "mail-search": "any",
+        "mail-from": "from",
+        "mail-to": "to",
+        "mail-ip": "ip",
+        "mail-domain": "domain",
+    }
+
     for command in (
         "bot",
         "health",
@@ -70,6 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
         "mail-stats",
         "mail-rejects",
         "mail-delivery",
+        "mail-search",
+        "mail-from",
+        "mail-to",
+        "mail-ip",
+        "mail-domain",
         "mail-service-logs",
         "greylist",
         "queue",
@@ -82,7 +102,18 @@ def build_parser() -> argparse.ArgumentParser:
         "snapshot",
         "status",
     ):
-        subparsers.add_parser(command)
+        command_parser = subparsers.add_parser(command)
+        if command in time_window_commands:
+            command_parser.add_argument(
+                "--since",
+                help="limit mail log analysis to a window such as 30m, 1h, 24h, or 7d",
+            )
+        if command in search_commands:
+            command_parser.add_argument("query", help="email, domain, IP, or text to search for")
+            command_parser.add_argument(
+                "--since",
+                help="limit mail search to a window such as 30m, 1h, 24h, or 7d",
+            )
 
     return parser
 
@@ -150,10 +181,10 @@ async def run_cli(
         "mail": diagnostics_service.get_mail,
         "mail-dns": diagnostics_service.get_mail_dns,
         "mail-tls": diagnostics_service.get_mail_tls,
-        "mail-logs": diagnostics_service.get_mail_logs,
-        "mail-stats": diagnostics_service.get_mail_stats,
-        "mail-rejects": diagnostics_service.get_mail_rejections,
-        "mail-delivery": diagnostics_service.get_mail_delivery,
+        "mail-logs": lambda: diagnostics_service.get_mail_logs(args.since),
+        "mail-stats": lambda: diagnostics_service.get_mail_stats(args.since),
+        "mail-rejects": lambda: diagnostics_service.get_mail_rejections(args.since),
+        "mail-delivery": lambda: diagnostics_service.get_mail_delivery(args.since),
         "mail-service-logs": diagnostics_service.get_mail_service_logs,
         "greylist": diagnostics_service.get_greylist,
         "queue": diagnostics_service.get_mail_queue,
@@ -187,6 +218,37 @@ async def run_cli(
         "security": format_security,
         "audit": format_audit,
     }
+    search_modes = {
+        "mail-search": "any",
+        "mail-from": "from",
+        "mail-to": "to",
+        "mail-ip": "ip",
+        "mail-domain": "domain",
+    }
+    if command in search_modes:
+        mode = search_modes[command]
+        raw = await diagnostics_service.get_mail_search(
+            mode=mode,
+            query=args.query,
+            since=args.since,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "command": command,
+                        "mode": mode,
+                        "query": args.query,
+                        "since": args.since,
+                        "output": redact(raw),
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(format_mail_search(raw, mode=mode, query=args.query, since=args.since))
+        return 0
+
     if command in diagnostics_commands:
         raw = await diagnostics_commands[command]()
         if args.json:
