@@ -1,240 +1,240 @@
-# FleetOps
+<p align="center">
+  <img src="docs/assets/fleetops-banner.svg" alt="FleetOps - диагностика Linux-серверов через SSH" width="100%">
+</p>
 
-Текущий аудит кода и целевая структура: [docs/CODE_AUDIT.ru.md](docs/CODE_AUDIT.ru.md).
+<p align="center">
+  <a href="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml"><img src="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml/badge.svg?branch=codex%2Fdevops-mail-mvp" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/version-0.1.0-1f6feb" alt="Версия 0.1.0">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3fb950" alt="Лицензия MIT"></a>
+  <img src="https://img.shields.io/badge/remote%20probes-read--only-d29922" alt="Read-only диагностика">
+</p>
 
-**FleetOps** - это open-source DevOps assistant для быстрой диагностики Linux/VPS серверов без установки агента на сервер.
+<p align="center">
+  <a href="README.md">English</a> ·
+  <a href="#быстрый-старт">Быстрый старт</a> ·
+  <a href="#карта-команд">Команды</a> ·
+  <a href="#модель-безопасности">Безопасность</a> ·
+  <a href="docs/CODE_AUDIT.ru.md">Аудит кода</a>
+</p>
 
-Проект работает в первую очередь из терминала, а Telegram-бот используется как удобная удаленная панель. Сейчас FleetOps уже умеет проверять Linux, systemd, Docker и почтовую инфраструктуру Postfix/Mail-in-a-Box.
+FleetOps — open-source DevOps assistant для диагностики Linux-серверов через SSH. Он помогает
+быстро понять, что сломалось и куда смотреть дальше, прямо из терминала. Telegram доступен как
+дополнительная удалённая панель, но не является обязательным.
 
-Текущий статус: **v0.1.0 MVP**. Версия рассчитана на один сервер. Поддержка нескольких серверов запланирована следующим крупным этапом.
+> [!IMPORTANT]
+> FleetOps работает без агента на сервере и использует только ограниченные read-only проверки.
+> Версия `0.1.0` рассчитана на один сервер. Multi-host режим — следующий крупный этап.
 
-## 🚀 Возможности
+## Как это выглядит
 
-- 🔌 SSH-сбор диагностики без агента на сервере
-- 🩺 Проверка load average, памяти, дисков и failed systemd units
-- 🧩 Обзор сервисов, портов, journal, процессов, reboot history и обновлений
-- 🐳 Docker summary, health/restarts/OOM, ресурсы и bounded logs по контейнеру
-- ✅ GitHub Actions CI для Python 3.12 и 3.13
-- 📮 Mail diagnostics для Postfix/Dovecot/Mail-in-a-Box
-- 🤖 Красивые Telegram-ответы с emoji и inline-кнопками
-- 💻 Terminal CLI для всех ключевых команд
-- 🛡️ Read-only security audit без опасных remediation-команд
-- 📦 Redacted snapshots для инцидентов
-- 🧪 Demo mode без SSH
-- ✅ Unit tests и понятная структура проекта
+<p align="center">
+  <img src="docs/assets/cli-preview.svg" alt="FleetOps CLI: здоровье сервера и почтовая статистика" width="100%">
+</p>
 
-## 🎯 Зачем это нужно
+<details>
+<summary><strong>Telegram как дополнительная панель</strong></summary>
+<br>
+<p align="center">
+  <img src="docs/assets/telegram-preview.svg" alt="FleetOps в Telegram: health и Docker diagnostics" width="100%">
+</p>
+</details>
 
-FleetOps должен отвечать на типовые вопросы администратора:
+В превью используются детерминированные demo-данные. Там нет реальных IP, доменов, адресов
+почты или данных Telegram-аккаунта.
 
-- 🟢 Сервер живой или уже горит?
-- 🐢 Почему Telegram/сайт/API/почта тормозит?
-- 💾 Что с диском, RAM, load и systemd?
-- 🔴 Какие сервисы упали?
-- 🌐 Какие порты торчат наружу?
-- 🐳 Что происходит с Docker?
-- 📬 Почему письма не доходят?
-- ⛔ Кто спамит, кто rejected, кто greylisted?
-- 📊 Какие домены чаще всего отправляют/получают почту?
+## Что уже умеет FleetOps
 
-## 🏗️ Архитектура
+| Область | Диагностика |
+| --- | --- |
+| Linux health | Load, память, файловые системы, failed systemd units |
+| Система | Сервисы, journal, listening ports, процессы, reboot history, обновления |
+| Docker | Статусы, healthcheck, рестарты, OOM, exit codes, CPU/RAM, logs, disk usage |
+| Почта | Postfix/Dovecot, DNS, TLS, queue, delivery, reject, bounce и greylist анализ |
+| Security | Сессии, входы, firewall hints, SSH/Postfix checks, read-only audit |
+| Инциденты | Единый отчёт по health, services, ports, security, mail, queue и snapshot |
 
-```mermaid
-flowchart TD
-    CLI["Terminal CLI"] --> Services["Application services"]
-    Telegram["Telegram bot"] --> Services
-    Services --> Collector["Collector backend"]
-    Collector --> SSH["Read-only SSH commands"]
-    Collector --> Demo["Demo data"]
-    Services --> Formatter["Formatters"]
-    Formatter --> CLI
-    Formatter --> Telegram
-    Services --> Redaction["Redaction layer"]
+### Принципы проекта
+
+- **Без агента**: на целевом сервере достаточно SSH.
+- **Предсказуемо**: CLI и Telegram не принимают произвольные shell-команды.
+- **Ограниченно**: логи, процессы, порты и время remote-команд имеют жёсткие лимиты.
+- **Понятно**: детерминированные статусы `OK`, `WARNING`, `CRITICAL`, `UNKNOWN`.
+- **Независимо**: основная логика не зависит от Telegram.
+- **Приватно**: не нужен облачный аккаунт, web UI или входящий порт для бота.
+
+## Быстрый старт
+
+### 1. Установка
+
+```bash
+git clone https://github.com/Anton-Babaskin/FleetOps.git
+cd FleetOps
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
-Основная логика не зависит от Telegram. Бот - это только один из интерфейсов.
+Активация окружения в PowerShell:
 
-## 🗂️ Структура проекта
-
-```text
-fleetops/
-  checks/                 Health checks: load, memory, disk, systemd
-  collectors/             Demo и SSH read-only сборщики
-  domain/                 Pydantic-модели и статусы
-  interfaces/telegram/    Telegram bot handlers и formatters
-  rules/                  Правила OK/WARNING/CRITICAL
-  security/               Redaction helpers
-  services/               Health, diagnostics и snapshot services
-  cli.py                  CLI dispatcher
-  main.py                 Entry point
-config/                   Пример конфигурации сервера
-tests/                    Unit tests и fixtures
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
-## 🛡️ Безопасность
-
-- 🔒 Команды Telegram не принимают произвольный shell input
-- 📌 Все SSH-команды заранее зафиксированы в коде
-- 🧾 Production mode требует `known_hosts`
-- 🚫 Unknown SSH host keys не принимаются автоматически
-- 🆔 Доступ в Telegram идет по numeric user ID, не по username
-- 🧼 Snapshot проходит через redaction layer
-- 🙈 `.env`, `config/hosts.yml`, ключи и known_hosts игнорируются git
-
-Важно: redaction - это дополнительная защита, а не математическая гарантия, что любой секрет в произвольном логе будет найден.
-
-## ⚡ Быстрый старт
+### 2. Настройка сервера
 
 ```bash
 cp .env.example .env
 cp config/hosts.example.yml config/hosts.yml
 ```
 
-Дальше нужно заполнить `.env` и `config/hosts.yml`.
+Укажи сервер в `config/hosts.yml`, затем настрой SSH в `.env`:
 
-Запуск production-профиля:
+```dotenv
+FLEETOPS_CONFIG_PATH=config/hosts.yml
+FLEETOPS_SSH_PRIVATE_KEY_PATH=/path/to/id_ed25519
+FLEETOPS_SSH_KNOWN_HOSTS_PATH=config/known_hosts.local
+```
+
+> [!CAUTION]
+> Перед добавлением сервера в `known_hosts` сверь его fingerprint по независимому каналу.
+> Пароль поддерживается для тестовой среды, но для production лучше использовать SSH-ключ.
+
+### 3. Запуск диагностики
+
+```bash
+fleetops health
+fleetops incident --since 24h
+fleetops --json disk
+```
+
+### Demo без SSH
+
+```bash
+FLEETOPS_DEMO_MODE=true \
+FLEETOPS_CONFIG_PATH=config/hosts.example.yml \
+fleetops health
+```
+
+PowerShell:
+
+```powershell
+$env:FLEETOPS_DEMO_MODE = "true"
+$env:FLEETOPS_CONFIG_PATH = "config/hosts.example.yml"
+fleetops health
+```
+
+### Telegram-бот
+
+Добавь токен бота и numeric Telegram user ID в `.env` и `config/hosts.yml`, затем запусти:
+
+```bash
+fleetops bot
+```
+
+Запуск через Docker Compose:
 
 ```bash
 docker compose --profile production up -d --build
 ```
 
-Telegram работает через long polling, поэтому открывать входящие порты для бота не нужно.
+Перед запуском Compose укажи в `.env` host-пути `FLEETOPS_SSH_PRIVATE_KEY_SOURCE` и
+`FLEETOPS_SSH_KNOWN_HOSTS_SOURCE`. Файлы монтируются в контейнер read-only.
 
-## 🧪 Demo Mode
+Telegram использует long polling, поэтому FleetOps не открывает входящий порт.
 
-Demo mode не требует SSH, ключей и `known_hosts`.
+## Карта команд
+
+Терминал — основной интерфейс. Telegram запускает те же сценарии slash-командами.
+
+### Сервер и инциденты
+
+| CLI | Telegram | Что показывает |
+| --- | --- | --- |
+| `fleetops health` | `/health` | Общее здоровье load, memory, disk и systemd |
+| `fleetops services` | `/services` | Running и failed services |
+| `fleetops ports` | `/ports` | Ограниченный список listening TCP/UDP sockets |
+| `fleetops processes` | `/processes` | Top процессов по CPU и памяти |
+| `fleetops security` | `/security` | Сессии, входы и firewall overview |
+| `fleetops audit` | `/audit` | Read-only Linux и mail security audit |
+| `fleetops incident --since 24h` | `/incident 24h` | Компактный incident report |
+| `fleetops snapshot` | `/snapshot` | Диагностический snapshot с redaction |
+
+### Docker
+
+| CLI | Telegram | Что показывает |
+| --- | --- | --- |
+| `fleetops docker` | `/docker` | Контейнеры и Docker disk summary |
+| `fleetops docker-deep` | `/dockerdeep` | Health, restart count, OOM, CPU/RAM и Compose projects |
+| `fleetops docker-logs nginx` | `/dockerlogs nginx` | Ограниченные логи выбранного контейнера |
+
+### Почта
+
+| CLI | Telegram | Что показывает |
+| --- | --- | --- |
+| `fleetops mail` | `/mail` | Сервисы и интерактивное mail-меню |
+| `fleetops mail-dns` | `/maildns` | MX, A/AAAA, SPF и DMARC |
+| `fleetops mail-tls` | `/mailtls` | Сертификаты Postfix и Dovecot |
+| `fleetops mail-stats --since 24h` | `/mailstats 24h` | Поток, домены, relays и reject reasons |
+| `fleetops mail-rejects --since 24h` | `/mailrejects 24h` | Rejected и greylisted события |
+| `fleetops mail-delivery --since 24h` | `/maildelivery 24h` | Sent, deferred и bounced события |
+| `fleetops greylist` | `/greylist` | Postgrey counters, IP, senders и recent events |
+| `fleetops queue` | `/queue` | Текущая Postfix queue |
+
+Точечный поиск доступен по отправителю, получателю, домену, IP и произвольному тексту:
 
 ```bash
-cp .env.example .env
-# Укажи FLEETOPS_TELEGRAM_BOT_TOKEN в .env
-docker compose --profile demo up --build
-```
-
-## 💻 CLI
-
-FleetOps задуман как terminal-first инструмент.
-
-```bash
-fleetops health
-fleetops services
-fleetops ports
-fleetops docker
-fleetops docker-deep
-fleetops docker-logs
-fleetops docker-logs nginx
-fleetops mail
-fleetops mail-stats
-fleetops mail-stats --since 24h
-fleetops mail-rejects
-fleetops mail-delivery
-fleetops mail-search spamhaus --since 7d
 fleetops mail-from sender@example.org --since 24h
 fleetops mail-to user@example.com --since 24h
-fleetops mail-ip 203.0.113.66 --since 7d
 fleetops mail-domain example.com --since 7d
-fleetops greylist
-fleetops queue
-fleetops top
-fleetops processes
-fleetops reboots
-fleetops updates
-fleetops security
-fleetops audit
-fleetops incident --since 24h
-fleetops snapshot
+fleetops mail-ip 203.0.113.66 --since 7d
+fleetops mail-search spamhaus --since 7d
 ```
 
-Для health/check команд доступен JSON:
+Полный список: `fleetops --help`. В Telegram: `/help`.
 
-```bash
-fleetops --json health
-fleetops --json disk
+## Архитектура
+
+```mermaid
+flowchart LR
+    CLI[Terminal CLI] --> Services[Application services]
+    TG[Telegram bot] --> Services
+    Services --> Health[Health rules]
+    Services --> Parsers[Mail and Docker parsers]
+    Services --> Snapshots[Snapshot service]
+    Health --> Collector[Collector protocol]
+    Parsers --> Collector
+    Snapshots --> Collector
+    Collector --> Demo[Deterministic demo]
+    Collector --> SSH[Fixed SSH probes]
+    Snapshots --> Redaction[Redaction layer]
 ```
 
-## 🤖 Telegram
+Collector собирает ограниченные факты. Parsers и rules превращают их в детерминированный
+результат. CLI и Telegram только отображают данные и не владеют логикой диагностики.
 
-Основные команды:
+## Модель безопасности
 
-- `/health` - общее здоровье сервера
-- `/load`, `/memory`, `/disk`, `/systemd` - детальные health checks
-- `/services` - running/failed systemd services
-- `/journal` - последние warning/error journal lines
-- `/ports` - слушающие TCP/UDP порты
-- `/docker` - контейнеры и docker disk usage
-- `/dockerdeep` - health, restart count, OOM/exit code, CPU/RAM и Docker disk usage
-- `/dockerlogs [container]` - bounded logs выбранного или нескольких активных контейнеров
-- `/mail` - почтовое меню с кнопками
-- `/mailstats 24h` - статистика отправок, доменов, маршрутов и reject reasons за период
-- `/mailrejects 24h` - rejected и greylisted события за период
-- `/maildelivery 24h` - sent/deferred/bounced delivery events за период
-- `/maillogs 24h` - общий parsed mail flow за период
-- `/mailsearch spamhaus 7d` - поиск по parsed mail events
-- `/mailfrom sender@example.org 24h` - поиск по отправителю
-- `/mailto user@example.com 24h` - поиск по получателю
-- `/mailip 203.0.113.66 7d` - поиск по IP
-- `/maildomain example.com 7d` - поиск по домену отправителя/получателя
-- `/greylist` - postgrey summary
-- `/queue` - mail queue
-- `/security` - sessions, logins, firewall/security services
-- `/audit` - read-only security/mail audit
-- `/incident 24h` - компактный incident report по health, services, ports, security, mail и queue
-- `/snapshot` - redacted diagnostic snapshot
-- `/status` - статус бота
-- `/whoami` - numeric Telegram ID
+- Проверка SSH host key обязательна вне demo mode.
+- Неизвестные host keys не принимаются автоматически.
+- Telegram авторизует по numeric user ID, а не по username.
+- Аргументы проходят валидацию и используются только в фиксированных сценариях.
+- Remote reports ограничены timeout и лимитами вывода.
+- Snapshot получает права `0600` и проходит best-effort redaction.
+- FleetOps не выполняет restart, delete, firewall, package install или remediation.
 
-## 📮 Почтовая диагностика
+> [!WARNING]
+> Redaction — страховочный слой, а не гарантия обнаружения любого секрета в произвольном
+> стороннем логе. Проверяй snapshot перед отправкой за пределы своей команды.
 
-FleetOps уже умеет разделять почтовую диагностику на несколько полезных слоев:
+## Конфигурация
 
-- 🧰 **Mail services** - postfix, dovecot, nginx, opendkim, opendmarc, postgrey
-- 🧭 **Mail DNS** - hostname, MX, A/AAAA, SPF, DMARC
-- 🔐 **Mail TLS** - certificates для Postfix/Dovecot endpoints
-- 📨 **Mail flow** - parsed sent/reject/defer/bounce events
-- ⛔ **Mail rejects** - причины отказов, client, sender, recipient, helo
-- ✅ **Mail delivery** - доставки, deferred и bounced события
-- 📊 **Mail stats** - топ доменов, маршрутов, relay, volume и reject reasons
-- 🔎 **Mail filters** - поиск по email, domain, IP и произвольному тексту
-- ⏱️ **Time windows** - окна `30m`, `1h`, `24h`, `7d` для логов и статистики
-- 🩶 **Greylist** - postgrey counters, top IP, senders и recent events
-
-Пример того, к чему стремимся в Telegram:
-
-```text
-📊 Mail stats
-
-🟢 Sent: 34
-⛔ Rejected: 154
-🩶 Greylisted: 9
-🔴 Bounced: 6
-
-Top sender domains
-• 21  bravotankers.com
-• 2   wetbrokers.gr
-
-Top reject reasons
-• 94  Spamhaus blocklist
-• 48  Relay access denied
-```
-
-## ⚙️ Конфигурация
-
-Переменные окружения:
-
-```bash
-FLEETOPS_CONFIG_PATH=/app/config/hosts.yml
-FLEETOPS_DEMO_MODE=false
-FLEETOPS_TELEGRAM_BOT_TOKEN=replace-with-telegram-bot-token
-FLEETOPS_SSH_PRIVATE_KEY_PATH=/run/secrets/fleetops_ssh_key
-FLEETOPS_SSH_KNOWN_HOSTS_PATH=/run/secrets/fleetops_known_hosts
-FLEETOPS_SSH_PASSWORD=
-```
-
-Пример `config/hosts.yml`:
+Полный пример находится в [config/hosts.example.yml](config/hosts.example.yml).
 
 ```yaml
 host:
-  id: demo-server
-  hostname: server.example.com
+  id: mail-01
+  hostname: mail.example.com
   port: 22
   username: fleetops
 
@@ -242,136 +242,66 @@ telegram:
   allowed_user_ids:
     - 123456789
 
-thresholds:
-  load:
-    warning_per_cpu: 1.0
-    critical_per_cpu: 2.0
-  memory:
-    warning_percent: 80
-    critical_percent: 95
-  disk:
-    warning_percent: 85
-    critical_percent: 95
-  systemd:
-    critical_on_failed: false
-
 timeouts:
   connection_seconds: 10
   command_seconds: 10
-
-snapshot:
-  output_directory: /tmp/fleetops
-  retention_hours: 24
 ```
 
-## 🧑‍💻 Разработка
+Thresholds для load, memory, disk и failed systemd units задаются в том же файле. Секреты и
+локальная конфигурация остаются в игнорируемых `.env` и `config/hosts.yml`.
+
+## Поддерживаемые системы
+
+- Python `3.12+`
+- Debian 12
+- Ubuntu 22.04 и 24.04
+- OpenSSH и systemd
+- Docker, если он установлен на целевой системе
+- Postfix/Dovecot и Mail-in-a-Box, если они установлены
+
+Другие современные systemd-дистрибутивы могут работать, но пока не входят в test matrix.
+
+## Разработка
 
 ```bash
 python -m pip install -e ".[dev]"
-ruff check .
-pytest
+python -m ruff check .
+python -m pytest
 ```
 
-## ⚠️ Ограничения MVP
+CI запускает lint и тесты на Python 3.12 и 3.13. Текущий набор покрывает rules, parsers,
+redaction, timeout handling, SSH boundaries, Telegram formatting, snapshots и demo data.
 
-- 🖥️ Один сервер в конфиге
-- 🌐 Нет web UI
-- ⏱️ Нет scheduler/background polling
-- 🗄️ Нет базы данных
-- 🛠️ Нет remediation-команд
-- 🧼 Snapshot redaction best-effort
-
-## 🧭 Следующие шаги
-
-### 1. 🖥️ Multi-host mode
-
-Добавить несколько серверов в `hosts.yml`, команды вида:
-
-```bash
-fleetops health --host mail-1
-fleetops health --all
-```
-
-В Telegram:
+### Структура проекта
 
 ```text
-/hosts
-/health mail-1
-/fleet
+fleetops/
+  checks/                 Парсинг Linux facts
+  collectors/             SSH и deterministic demo backends
+  domain/                 Health, mail и Docker models
+  interfaces/telegram/    Telegram adapter и presentation
+  parsers/                Postfix и Docker report parsers
+  rules/                  Детерминированный health evaluation
+  security/               Redaction секретов
+  services/               Workflows и validation
+config/                   Примеры host configuration
+docs/                     Аудит и визуальные assets
+tests/                    Unit tests и fixtures
 ```
 
-### 2. 🔎 Фильтры по почте
+## Статус и roadmap
 
-Точечные расследования уже доступны базово:
+| Этап | Объём |
+| --- | --- |
+| Сейчас: `v0.1` | Один host, CLI, Telegram, Linux/Docker/mail/security diagnostics |
+| Дальше: `v0.2` | Multi-host config, выбор host, fleet summary, SSH concurrency limits |
+| Позже | Watch mode, alerts, incident scoring, абсолютные mail time ranges |
 
-```text
-/mailsearch user@example.com
-/mailfrom sender@example.org
-/mailto recipient@example.com
-/mailip 1.2.3.4
-/maildomain example.com
-```
+Текущие ограничения: один сервер, нет scheduler, базы данных, web UI и remediation-команд.
+Для MVP эти границы выбраны осознанно.
 
-Следующий слой: сделать fuzzy matching, группировку похожих reject reasons и выдачу краткой причины "почему письмо не дошло".
+Подробный аудит архитектуры: [docs/CODE_AUDIT.ru.md](docs/CODE_AUDIT.ru.md).
 
-### 3. ⏱️ Временные окна
+## Лицензия
 
-Базовые окна уже доступны:
-
-```text
-/mailstats 1h
-/mailstats 24h
-/mailstats 7d
-fleetops mail-stats --since 24h
-```
-
-Следующий слой: добавить абсолютные интервалы `--from/--to` и пресеты `today`, `yesterday`.
-
-### 4. 🚨 Incident reports
-
-Базовая команда уже доступна:
-
-```text
-/incident
-fleetops incident --since 24h
-```
-
-Внутри: health, failed services, disk, top processes, ports, security, mail stats, queue.
-
-Следующий слой: сделать severity scoring и короткую строку "что чинить первым".
-
-### 5. 👀 Watch mode
-
-Наблюдение без remediation:
-
-```text
-fleetops watch health
-fleetops watch mail
-```
-
-Telegram alerts можно добавить позже, после аккуратной настройки thresholds.
-
-### 6. 🐳 Docker глубже
-
-Базовая глубокая диагностика уже добавлена: container health, restart count, OOM/exit code,
-CPU/RAM, compose projects, disk usage и logs by container name. Следующий слой: события Docker,
-анализ healthcheck output и безопасное сравнение compose-конфигурации с runtime.
-
-### 7. 📦 Упаковка MVP
-
-- GitHub Actions CI
-- screenshots/GIF для README
-- release notes
-- готовый docker image
-- install guide для VPS
-
-## ✅ Рекомендуемый ближайший план
-
-Я бы двигался так:
-
-1. **Mail filters** - самый полезный прирост прямо сейчас.
-2. **Time windows** - чтобы статистика была не только по хвосту логов, а за понятный период.
-3. **Incident report scoring** - подсказка "что чинить первым" поверх готового отчета.
-4. **Multi-host mode** - уже после того, как один сервер станет очень удобным.
-
-Так мы быстро доведем MVP до инструмента, который реально помогает в ежедневной админке.
+[MIT](LICENSE) © Anton Babaskin

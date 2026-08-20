@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">FleetOps terminal preview</title>
+  <desc id="desc">FleetOps health and mail statistics shown in two terminal windows.</desc>
+  <rect width="1200" height="650" fill="#f6f8fa"/>
+  <text x="60" y="64" fill="#1f2328" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="30" font-weight="700">One CLI for the first ten minutes of an incident</text>
+  <text x="60" y="96" fill="#656d76" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="17">Bounded, read-only diagnostics with human output and JSON where it matters.</text>
+
+  <g transform="translate(60 130)">
+    <rect width="510" height="460" rx="8" fill="#0d1117" stroke="#d0d7de"/>
+    <rect width="510" height="44" rx="8" fill="#161b22"/>
+    <rect y="36" width="510" height="8" fill="#161b22"/>
+    <circle cx="24" cy="22" r="6" fill="#f85149"/>
+    <circle cx="44" cy="22" r="6" fill="#d29922"/>
+    <circle cx="64" cy="22" r="6" fill="#3fb950"/>
+    <text x="88" y="27" fill="#8b949e" font-family="Consolas, monospace" font-size="13">fleetops health</text>
+
+    <g font-family="Consolas, monospace" font-size="15">
+      <text x="26" y="82" fill="#79c0ff">$ fleetops health</text>
+      <text x="26" y="126" fill="#f0f6fc" font-size="20" font-weight="700">Health / demo.example.com</text>
+      <circle cx="34" cy="161" r="6" fill="#d29922"/>
+      <text x="51" y="167" fill="#e3b341" font-weight="700">WARNING overall</text>
+      <text x="26" y="199" fill="#8b949e">Collection: 0 ms</text>
+
+      <circle cx="34" cy="240" r="5" fill="#3fb950"/>
+      <text x="51" y="246" fill="#c9d1d9">Load</text>
+      <text x="170" y="246" fill="#8b949e">0.76 / 0.61 / 0.57 - 8 CPU</text>
+      <circle cx="34" cy="276" r="5" fill="#3fb950"/>
+      <text x="51" y="282" fill="#c9d1d9">Memory</text>
+      <text x="170" y="282" fill="#8b949e">72% used</text>
+      <circle cx="34" cy="312" r="5" fill="#d29922"/>
+      <text x="51" y="318" fill="#c9d1d9">Disk</text>
+      <text x="170" y="318" fill="#e3b341">/ is 87% full</text>
+      <circle cx="34" cy="348" r="5" fill="#d29922"/>
+      <text x="51" y="354" fill="#c9d1d9">systemd</text>
+      <text x="170" y="354" fill="#e3b341">backup.service failed</text>
+
+      <rect x="26" y="389" width="458" height="42" rx="6" fill="#161b22" stroke="#30363d"/>
+      <text x="43" y="415" fill="#7ee787">Next: fleetops incident --since 24h</text>
+    </g>
+  </g>
+
+  <g transform="translate(600 130)">
+    <rect width="540" height="460" rx="8" fill="#0d1117" stroke="#d0d7de"/>
+    <rect width="540" height="44" rx="8" fill="#161b22"/>
+    <rect y="36" width="540" height="8" fill="#161b22"/>
+    <circle cx="24" cy="22" r="6" fill="#f85149"/>
+    <circle cx="44" cy="22" r="6" fill="#d29922"/>
+    <circle cx="64" cy="22" r="6" fill="#3fb950"/>
+    <text x="88" y="27" fill="#8b949e" font-family="Consolas, monospace" font-size="13">fleetops mail-stats --since 24h</text>
+
+    <g font-family="Consolas, monospace" font-size="15">
+      <text x="26" y="82" fill="#79c0ff">$ fleetops mail-stats --since 24h</text>
+      <text x="26" y="126" fill="#f0f6fc" font-size="20" font-weight="700">Mail stats / 24h</text>
+      <circle cx="34" cy="162" r="5" fill="#3fb950"/>
+      <text x="51" y="168" fill="#c9d1d9">Sent</text>
+      <text x="195" y="168" fill="#7ee787">42</text>
+      <circle cx="34" cy="195" r="5" fill="#f85149"/>
+      <text x="51" y="201" fill="#c9d1d9">Rejected</text>
+      <text x="195" y="201" fill="#ff7b72">9</text>
+      <circle cx="34" cy="228" r="5" fill="#d29922"/>
+      <text x="51" y="234" fill="#c9d1d9">Greylisted</text>
+      <text x="195" y="234" fill="#e3b341">4</text>
+      <circle cx="34" cy="261" r="5" fill="#f0883e"/>
+      <text x="51" y="267" fill="#c9d1d9">Deferred / bounced</text>
+      <text x="244" y="267" fill="#ffa657">3 / 1</text>
+
+      <text x="26" y="311" fill="#f0f6fc" font-weight="700">Top sender domains</text>
+      <text x="26" y="343" fill="#8b949e">18</text>
+      <text x="68" y="343" fill="#c9d1d9">example.org</text>
+      <text x="26" y="372" fill="#8b949e">12</text>
+      <text x="68" y="372" fill="#c9d1d9">sender.test</text>
+
+      <text x="285" y="311" fill="#f0f6fc" font-weight="700">Reject reasons</text>
+      <text x="285" y="343" fill="#8b949e">5</text>
+      <text x="316" y="343" fill="#c9d1d9">Relay access denied</text>
+      <text x="285" y="372" fill="#8b949e">4</text>
+      <text x="316" y="372" fill="#c9d1d9">Greylisted</text>
+
+      <rect x="26" y="399" width="488" height="32" rx="6" fill="#161b22" stroke="#30363d"/>
+      <text x="43" y="420" fill="#a5d6ff">Search: fleetops mail-from sender.test --since 24h</text>
+    </g>
+  </g>
+</svg>

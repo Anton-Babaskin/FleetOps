@@ -1,128 +1,240 @@
-# FleetOps
+<p align="center">
+  <img src="docs/assets/fleetops-banner.svg" alt="FleetOps - agentless Linux diagnostics over SSH" width="100%">
+</p>
 
-FleetOps is open-source, self-hosted, agentless infrastructure diagnostics for Linux server fleets.
+<p align="center">
+  <a href="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml"><img src="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml/badge.svg?branch=codex%2Fdevops-mail-mvp" alt="CI"></a>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
+  <img src="https://img.shields.io/badge/version-0.1.0-1f6feb" alt="Version 0.1.0">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3fb950" alt="MIT license"></a>
+  <img src="https://img.shields.io/badge/remote%20probes-read--only-d29922" alt="Read-only probes">
+</p>
 
-[Русская версия](README.ru.md)
+<p align="center">
+  <a href="README.ru.md">Русский</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#command-map">Commands</a> ·
+  <a href="#security-model">Security</a> ·
+  <a href="docs/CODE_AUDIT.ru.md">Code audit</a>
+</p>
 
-Current status: **v0.1.0**. This first release intentionally supports one configured Linux server. Multi-host fleet collection is planned for v0.2.
+FleetOps is an open-source, self-hosted DevOps assistant for diagnosing Linux servers over
+SSH. It answers the first operational questions from the terminal, with Telegram available as
+an optional remote control surface.
 
-## Features
+> [!IMPORTANT]
+> FleetOps is terminal-first, agentless, and intentionally read-only. Version `0.1.0` targets
+> one configured server; multi-host collection is the next major milestone.
 
-- Agentless SSH collection with `asyncssh`
-- Deterministic checks for load, memory, disk usage, and failed systemd units
-- Versioned Pydantic JSON health contract
-- Terminal-first CLI for Linux, Docker, systemd, and mail diagnostics
-- Optional Telegram bot control surface for the same diagnostics
-- Numeric Telegram user ID allowlist
-- Demo mode without SSH
-- Docker Compose deployment
-- Unit tests for models, rules, redaction, formatter, and demo collector
-- GitHub Actions CI on Python 3.12 and 3.13
+## See it in action
 
-## Architecture
+<p align="center">
+  <img src="docs/assets/cli-preview.svg" alt="FleetOps CLI showing server health and mail statistics" width="100%">
+</p>
 
-```mermaid
-flowchart TD
-    Collector --> Parsed[Parsed check facts]
-    Parsed --> Rules[Rules engine]
-    Rules --> HealthService
-    HealthService --> Formatter
-    Formatter --> Telegram
-    Collector --> SnapshotService
-    SnapshotService --> Redaction
-    Redaction --> Telegram
+<details>
+<summary><strong>Telegram control surface</strong></summary>
+<br>
+<p align="center">
+  <img src="docs/assets/telegram-preview.svg" alt="FleetOps Telegram health and Docker diagnostics" width="100%">
+</p>
+</details>
+
+The previews use deterministic demo data. They contain no production hostnames, IP addresses,
+mailboxes, or Telegram account data.
+
+## What it covers
+
+| Area | Diagnostics |
+| --- | --- |
+| Linux health | Load, memory, filesystems, failed systemd units |
+| System | Services, journal, listening ports, processes, reboots, package updates |
+| Docker | Container states, healthchecks, restarts, OOM kills, exit codes, CPU/RAM, logs, disk usage |
+| Mail | Postfix/Dovecot services, DNS, TLS, queue, delivery, rejection, bounce and greylist analysis |
+| Security | Sessions, login history, firewall hints, SSH/Postfix checks, bounded read-only audit |
+| Incidents | Compact health + services + ports + security + mail + queue report and redacted snapshot |
+
+### Design principles
+
+- **Agentless**: only SSH access is required on the target server.
+- **Predictable**: Telegram and CLI cannot submit arbitrary shell commands.
+- **Bounded**: logs, process lists, sockets, and remote command durations have fixed limits.
+- **Explainable**: deterministic `OK`, `WARNING`, `CRITICAL`, and `UNKNOWN` results.
+- **Composable**: core services do not depend on Telegram.
+- **Private by default**: no web server, cloud account, or inbound bot port is required.
+
+## Quick start
+
+### 1. Install
+
+```bash
+git clone https://github.com/Anton-Babaskin/FleetOps.git
+cd FleetOps
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
-Core business logic does not depend on Telegram.
+On PowerShell, activate the environment with:
 
-The current architecture review and refactoring priorities are documented in
-[docs/CODE_AUDIT.ru.md](docs/CODE_AUDIT.ru.md).
-
-## Project Layout
-
-```text
-fleetops/
-  checks/                 Health collectors for load, memory, disk, and systemd
-  collectors/             Demo and SSH read-only collection backends
-  domain/                 Pydantic models and status enums
-  interfaces/telegram/    Telegram bot handlers and message formatters
-  parsers/                Postfix and Docker output parsers
-  rules/                  Health status rules
-  security/               Redaction helpers
-  services/               Application services for health, diagnostics, and snapshots
-  cli.py                  Terminal CLI command dispatcher
-  main.py                 Runtime entrypoint
-config/                   Example host configuration
-tests/                    Unit tests and fixtures
+```powershell
+.\.venv\Scripts\Activate.ps1
 ```
 
-## Security Model
-
-- SSH host key verification is mandatory in production mode.
-- Production mode requires a configured `known_hosts` file.
-- Unknown SSH host keys are never accepted automatically.
-- Telegram authorization uses numeric user IDs, not usernames.
-- Telegram commands cannot pass arbitrary shell commands to servers.
-- Snapshot collection uses a fixed read-only command list.
-- Snapshot files are written with `0600` permissions.
-- Snapshot output passes through a best-effort redaction layer.
-
-Redaction hides common token, password, bearer token, AWS key, and JWT-like patterns. It is a safety layer, not a guarantee that every secret in arbitrary logs will be found.
-
-## Supported Systems
-
-- Python 3.12
-- Debian 12
-- Ubuntu 22.04 and 24.04
-- OpenSSH
-- systemd
-- Docker Compose
-
-## Quick Start
+### 2. Configure one server
 
 ```bash
 cp .env.example .env
 cp config/hosts.example.yml config/hosts.yml
 ```
 
-Edit `.env` and `config/hosts.yml`, then run:
+Set the host in `config/hosts.yml`, then configure authentication in `.env`:
+
+```dotenv
+FLEETOPS_CONFIG_PATH=config/hosts.yml
+FLEETOPS_SSH_PRIVATE_KEY_PATH=/path/to/id_ed25519
+FLEETOPS_SSH_KNOWN_HOSTS_PATH=config/known_hosts.local
+```
+
+> [!CAUTION]
+> Verify the server fingerprint out of band before adding it to `known_hosts`. Password
+> authentication is supported for test environments, but SSH keys are the production default.
+
+### 3. Run diagnostics
+
+```bash
+fleetops health
+fleetops incident --since 24h
+fleetops --json disk
+```
+
+### Try demo mode without SSH
+
+```bash
+FLEETOPS_DEMO_MODE=true \
+FLEETOPS_CONFIG_PATH=config/hosts.example.yml \
+fleetops health
+```
+
+PowerShell:
+
+```powershell
+$env:FLEETOPS_DEMO_MODE = "true"
+$env:FLEETOPS_CONFIG_PATH = "config/hosts.example.yml"
+fleetops health
+```
+
+### Run the optional Telegram bot
+
+Add your bot token and numeric Telegram user ID to `.env` and `config/hosts.yml`, then run:
+
+```bash
+fleetops bot
+```
+
+For Docker Compose deployment:
 
 ```bash
 docker compose --profile production up -d --build
 ```
 
-No ports are published because Telegram uses long polling.
+Set `FLEETOPS_SSH_PRIVATE_KEY_SOURCE` and `FLEETOPS_SSH_KNOWN_HOSTS_SOURCE` in `.env`
+to host-side files before starting Compose. They are mounted read-only into the container.
 
-## Demo
+Telegram uses long polling, so FleetOps publishes no inbound port.
 
-Demo mode uses deterministic data and does not require SSH, a private key, or `known_hosts`.
+## Command map
+
+The terminal is the primary interface. Telegram exposes the same diagnostics with slash commands.
+
+### Server and incidents
+
+| CLI | Telegram | Purpose |
+| --- | --- | --- |
+| `fleetops health` | `/health` | Overall load, memory, disk and systemd health |
+| `fleetops services` | `/services` | Running and failed services |
+| `fleetops ports` | `/ports` | Bounded listening TCP/UDP sockets |
+| `fleetops processes` | `/processes` | Top CPU and memory processes |
+| `fleetops security` | `/security` | Sessions, login and firewall overview |
+| `fleetops audit` | `/audit` | Read-only Linux and mail security audit |
+| `fleetops incident --since 24h` | `/incident 24h` | Compact cross-system incident report |
+| `fleetops snapshot` | `/snapshot` | Redacted diagnostic snapshot |
+
+### Docker
+
+| CLI | Telegram | Purpose |
+| --- | --- | --- |
+| `fleetops docker` | `/docker` | Container and disk summary |
+| `fleetops docker-deep` | `/dockerdeep` | Health, restarts, OOM, resources and Compose projects |
+| `fleetops docker-logs nginx` | `/dockerlogs nginx` | Bounded logs for one selected container |
+
+### Mail
+
+| CLI | Telegram | Purpose |
+| --- | --- | --- |
+| `fleetops mail` | `/mail` | Mail service overview and action menu |
+| `fleetops mail-dns` | `/maildns` | MX, A/AAAA, SPF and DMARC records |
+| `fleetops mail-tls` | `/mailtls` | Postfix and Dovecot certificate details |
+| `fleetops mail-stats --since 24h` | `/mailstats 24h` | Aggregate flow, domains, relays and reject reasons |
+| `fleetops mail-rejects --since 24h` | `/mailrejects 24h` | Rejected and greylisted events |
+| `fleetops mail-delivery --since 24h` | `/maildelivery 24h` | Sent, deferred and bounced events |
+| `fleetops greylist` | `/greylist` | Postgrey counters, clients, senders and recent events |
+| `fleetops queue` | `/queue` | Current Postfix queue |
+
+Focused investigations are available by sender, recipient, domain, IP, or arbitrary text:
 
 ```bash
-cp .env.example .env
-# Set FLEETOPS_TELEGRAM_BOT_TOKEN in .env
-docker compose --profile demo up --build
+fleetops mail-from sender@example.org --since 24h
+fleetops mail-to user@example.com --since 24h
+fleetops mail-domain example.com --since 7d
+fleetops mail-ip 203.0.113.66 --since 7d
+fleetops mail-search spamhaus --since 7d
 ```
 
-The default demo scenario includes at least one warning.
+Run `fleetops --help` for the full command list. In Telegram, use `/help`.
 
-## Production Configuration
+## Architecture
 
-Environment variables:
-
-```bash
-FLEETOPS_CONFIG_PATH=/app/config/hosts.yml
-FLEETOPS_DEMO_MODE=false
-FLEETOPS_TELEGRAM_BOT_TOKEN=replace-with-telegram-bot-token
-FLEETOPS_SSH_PRIVATE_KEY_PATH=/run/secrets/fleetops_ssh_key
-FLEETOPS_SSH_KNOWN_HOSTS_PATH=/run/secrets/fleetops_known_hosts
+```mermaid
+flowchart LR
+    CLI[Terminal CLI] --> Services[Application services]
+    TG[Telegram bot] --> Services
+    Services --> Health[Health rules]
+    Services --> Parsers[Mail and Docker parsers]
+    Services --> Snapshots[Snapshot service]
+    Health --> Collector[Collector protocol]
+    Parsers --> Collector
+    Snapshots --> Collector
+    Collector --> Demo[Deterministic demo]
+    Collector --> SSH[Fixed SSH probes]
+    Snapshots --> Redaction[Redaction layer]
 ```
 
-Example YAML:
+The collector gathers bounded facts. Parsers and rules turn them into deterministic results.
+CLI and Telegram only present those results; neither interface owns the diagnostic logic.
+
+## Security model
+
+- SSH host key verification is mandatory outside demo mode.
+- Unknown host keys are never accepted automatically.
+- Telegram authorization uses numeric user IDs, not usernames.
+- User arguments are validated and passed only to fixed diagnostic workflows.
+- Remote reports are bounded by command timeouts and output limits.
+- Snapshots use `0600` permissions and pass through best-effort secret redaction.
+- FleetOps does not run restart, delete, firewall, package installation, or remediation commands.
+
+> [!WARNING]
+> Redaction is a safety layer, not a proof that every secret in arbitrary third-party logs can be
+> detected. Review snapshots before sharing them outside your team.
+
+## Configuration
+
+The complete example lives in [config/hosts.example.yml](config/hosts.example.yml).
 
 ```yaml
 host:
-  id: demo-server
-  hostname: server.example.com
+  id: mail-01
+  hostname: mail.example.com
   port: 22
   username: fleetops
 
@@ -130,186 +242,67 @@ telegram:
   allowed_user_ids:
     - 123456789
 
-thresholds:
-  load:
-    warning_per_cpu: 1.0
-    critical_per_cpu: 2.0
-  memory:
-    warning_percent: 80
-    critical_percent: 95
-  disk:
-    warning_percent: 85
-    critical_percent: 95
-  systemd:
-    critical_on_failed: false
-
 timeouts:
   connection_seconds: 10
   command_seconds: 10
-
-snapshot:
-  output_directory: /tmp/fleetops
-  retention_hours: 24
 ```
 
-## Telegram Commands
+Thresholds for load, memory, disk and failed systemd units are configured in the same file.
+Secrets and local host configuration remain in ignored `.env` and `config/hosts.yml` files.
 
-- `/start` checks access and confirms the bot is ready.
-- `/health` collects current health and returns a readable summary.
-- `/load`, `/memory`, `/disk`, and `/systemd` return focused check details.
-- `/services` summarizes running and failed systemd services.
-- `/journal` returns a bounded, redacted warning/error journal view.
-- `/ports` lists listening TCP/UDP sockets with a fixed limit.
-- `/docker` reports Docker containers and Docker disk usage when Docker is installed.
-- `/dockerdeep` reports health, restarts, OOM kills, exit codes, live usage, and disk usage.
-- `/dockerlogs [container]` returns bounded logs for one selected container or up to three
-  running containers.
-- `/mail` summarizes common mail services such as postfix, dovecot, nginx, and DKIM/DMARC.
-- `/maildns` checks hostname, Mail-in-a-Box identity hints, MX, A/AAAA, SPF, and DMARC.
-- `/mailtls` reports local postfix/dovecot certificate subject, issuer, and validity dates.
-- `/maillogs [1h|24h|7d]` returns parsed send/reject/defer/bounce mail flow events.
-- `/mailstats [1h|24h|7d]` reports aggregate sender domains, routes, relays, volume, and reject reasons.
-- `/mailrejects [1h|24h|7d]` returns rejected and greylisted mail events.
-- `/maildelivery [1h|24h|7d]` returns sent, deferred, and bounced delivery events.
-- `/mailsearch <text> [1h|24h|7d]` searches parsed mail events.
-- `/mailfrom <email/domain> [1h|24h|7d]` searches by sender.
-- `/mailto <email/domain> [1h|24h|7d]` searches by recipient.
-- `/mailip <ip> [1h|24h|7d]` searches by client/relay IP.
-- `/maildomain <domain> [1h|24h|7d]` searches by sender/recipient domain.
-- `/mailservice` returns bounded mail service lifecycle/configuration logs.
-- `/greylist` summarizes postgrey greylist/pass/reject activity and recent events.
-- `/queue` reports the mail queue when postqueue is installed.
-- `/top` returns a bounded top snapshot.
-- `/processes` shows top CPU and memory processes.
-- `/reboots` reports uptime and recent reboot/shutdown history.
-- `/updates` lists pending package updates when a supported package manager is installed.
-- `/security` summarizes sessions, recent logins, firewall status, and security services.
-- `/audit` runs a bounded read-only security and mail audit with PASS/WARN/CRITICAL summary.
-- `/incident [1h|24h|7d]` builds a compact incident report across health, services, ports, security, mail, and queue.
-- `/snapshot` creates a redacted incident snapshot and sends it as a text file.
-- `/status` reports bot mode, target host, allowlist size, and uptime.
-- `/whoami` returns the caller's numeric Telegram user ID.
+## Supported targets
 
-Unauthorized users receive only `Access denied.`.
+- Python `3.12+`
+- Debian 12
+- Ubuntu 22.04 and 24.04
+- OpenSSH and systemd
+- Docker when installed on the target
+- Postfix/Dovecot and Mail-in-a-Box diagnostics when installed
 
-## Terminal CLI
-
-FleetOps is terminal-first. The Telegram bot is an optional remote control surface over the
-same diagnostics.
-
-```bash
-fleetops health
-fleetops load
-fleetops memory
-fleetops disk
-fleetops systemd
-fleetops services
-fleetops journal
-fleetops ports
-fleetops docker
-fleetops docker-deep
-fleetops docker-logs
-fleetops docker-logs nginx
-fleetops mail
-fleetops mail-dns
-fleetops mail-tls
-fleetops mail-logs
-fleetops mail-stats
-fleetops mail-stats --since 24h
-fleetops mail-rejects
-fleetops mail-delivery
-fleetops mail-search spamhaus --since 7d
-fleetops mail-from sender@example.org --since 24h
-fleetops mail-to user@example.com --since 24h
-fleetops mail-ip 203.0.113.66 --since 7d
-fleetops mail-domain example.com --since 7d
-fleetops mail-service-logs
-fleetops greylist
-fleetops queue
-fleetops top
-fleetops processes
-fleetops reboots
-fleetops updates
-fleetops security
-fleetops audit
-fleetops incident --since 24h
-fleetops snapshot
-fleetops status
-fleetops bot
-```
-
-Structured output is available for health and individual checks:
-
-```bash
-fleetops --json health
-fleetops --json disk
-```
-
-## JSON Contract
-
-`overall_status` priority is deterministic:
-
-```text
-critical > warning > unknown > ok
-```
-
-Unsupported `schema_version` values are rejected by validation.
-
-```json
-{
-  "schema_version": "1.0",
-  "host": {
-    "id": "demo-server",
-    "hostname": "demo.example.com"
-  },
-  "collected_at": "2026-06-16T15:30:00Z",
-  "duration_ms": 842,
-  "overall_status": "warning",
-  "checks": [
-    {
-      "name": "disk",
-      "status": "warning",
-      "summary": "/home is 87% full",
-      "metrics": {
-        "mountpoint": "/home",
-        "usage_percent": 87,
-        "free_bytes": 22978075034
-      },
-      "reason": "Disk usage exceeded warning threshold of 85%",
-      "error": null,
-      "timed_out": false,
-      "duration_ms": 72,
-      "raw_ref": null
-    }
-  ]
-}
-```
-
-## Screenshots
-
-Placeholder: Telegram `/health` and `/snapshot` screenshots will be added after the first public deployment.
-
-## Limitations
-
-- v0.1 supports one configured server.
-- No scheduler or background polling.
-- No web UI.
-- No database.
-- No remediation commands.
-- Snapshot redaction is best-effort.
-
-## Roadmap
-
-- v0.2: multi-host fleet collection
-- Configurable demo scenarios through environment
-- Additional read-only Linux diagnostics
-- Structured snapshot metadata
+Other modern systemd-based distributions may work, but are not yet part of the test matrix.
 
 ## Development
 
 ```bash
 python -m pip install -e ".[dev]"
-ruff check .
-pytest
+python -m ruff check .
+python -m pytest
 ```
 
+CI runs lint and tests on Python 3.12 and 3.13. The current suite covers rules, parsers,
+redaction, timeout handling, SSH boundaries, Telegram formatting, snapshots, and demo data.
+
+### Project layout
+
+```text
+fleetops/
+  checks/                 Linux fact parsers
+  collectors/             SSH and deterministic demo backends
+  domain/                 Health, mail and Docker models
+  interfaces/telegram/    Telegram adapter and presentation
+  parsers/                Postfix and Docker report parsers
+  rules/                  Deterministic health evaluation
+  security/               Secret redaction
+  services/               Application workflows and validation
+config/                   Host configuration examples
+docs/                     Audit and visual assets
+tests/                    Unit tests and fixtures
+```
+
+## Status and roadmap
+
+| Stage | Scope |
+| --- | --- |
+| Now: `v0.1` | One host, CLI, optional Telegram, Linux/Docker/mail/security diagnostics |
+| Next: `v0.2` | Multi-host config, host selection, fleet summary, SSH concurrency limits |
+| Later | Watch mode, alert thresholds, incident scoring, absolute mail time ranges |
+
+Current limitations: one configured host, no scheduler, no database, no web UI, and no
+remediation commands. These boundaries are deliberate for the MVP.
+
+The ongoing architecture review is documented in
+[docs/CODE_AUDIT.ru.md](docs/CODE_AUDIT.ru.md).
+
+## License
+
+[MIT](LICENSE) © Anton Babaskin
