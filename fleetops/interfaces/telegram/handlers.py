@@ -16,6 +16,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_audit_detail,
     format_check_detail,
     format_docker,
+    format_docker_deep,
     format_docker_logs,
     format_greylist,
     format_greylist_detail,
@@ -43,6 +44,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_top,
     format_updates,
 )
+from fleetops.interfaces.telegram.messages import split_message
 from fleetops.services.diagnostics_service import DiagnosticsService
 from fleetops.services.health_service import HealthService
 from fleetops.services.snapshot_service import SnapshotService
@@ -115,12 +117,7 @@ def build_router(
         )
 
     async def answer_chunks(message: Message, text: str) -> None:
-        max_length = 3800
-        if len(text) <= max_length:
-            await message.answer(text)
-            return
-        chunks = [text[index : index + max_length] for index in range(0, len(text), max_length)]
-        for chunk in chunks:
+        for chunk in split_message(text):
             await message.answer(chunk)
 
     async def answer_check_detail(message: Message, check_name: str) -> None:
@@ -160,7 +157,8 @@ def build_router(
                     "/journal - show recent warning/error journal lines",
                     "/ports - show listening TCP/UDP sockets",
                     "/docker - show Docker containers and disk usage",
-                    "/dockerlogs - show bounded logs for running containers",
+                    "/dockerdeep - show container health, restarts, resources, and disk usage",
+                    "/dockerlogs [container] - show bounded logs for selected/running containers",
                     "/mail - show common mail service status",
                     "/maildns - show mail DNS records",
                     "/mailtls - show mail TLS certificate details",
@@ -271,15 +269,28 @@ def build_router(
             return
         await answer_chunks(message, format_docker(await diagnostics_service.get_docker()))
 
-    @router.message(Command("dockerlogs"))
-    async def dockerlogs(message: Message) -> None:
+    @router.message(Command("dockerdeep"))
+    async def dockerdeep(message: Message) -> None:
         if not is_allowed(message):
             await message.answer("Access denied.")
             return
         await answer_chunks(
             message,
-            format_docker_logs(await diagnostics_service.get_docker_logs()),
+            format_docker_deep(await diagnostics_service.get_docker_deep()),
         )
+
+    @router.message(Command("dockerlogs"))
+    async def dockerlogs(message: Message) -> None:
+        if not is_allowed(message):
+            await message.answer("Access denied.")
+            return
+        container = command_tail(message) or None
+        try:
+            raw = await diagnostics_service.get_docker_logs(container)
+        except ValueError as exc:
+            await message.answer(f"Bad container name: {exc}")
+            return
+        await answer_chunks(message, format_docker_logs(raw))
 
     @router.message(Command("mail"))
     async def mail(message: Message) -> None:

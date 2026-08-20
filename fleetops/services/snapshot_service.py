@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -15,7 +16,9 @@ class SnapshotService:
         self.config.output_directory.mkdir(parents=True, exist_ok=True)
         self.cleanup_old_snapshots()
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        filename = f"fleetops-{self.collector.host.id}-{timestamp}.snapshot.txt"
+        host_id = re.sub(r"[^A-Za-z0-9._-]+", "-", self.collector.host.id).strip(".-_")
+        host_id = host_id[:80] or "host"
+        filename = f"fleetops-{host_id}-{timestamp}.snapshot.txt"
         path = self.config.output_directory / filename
         sections = await self.collector.collect_snapshot()
         lines = [
@@ -34,6 +37,8 @@ class SnapshotService:
             return
         cutoff = datetime.now(UTC) - timedelta(hours=self.config.retention_hours)
         for path in self.config.output_directory.glob("*.snapshot.txt"):
+            if path.is_symlink() or not path.is_file():
+                continue
             modified = datetime.fromtimestamp(path.stat().st_mtime, UTC)
             if modified < cutoff:
                 path.unlink(missing_ok=True)

@@ -168,6 +168,36 @@ class DemoCollector:
             ]
         )
 
+    async def collect_docker_deep(self) -> str:
+        return "\n".join(
+            [
+                "== DOCKER SUMMARY ==",
+                "containers=2",
+                "running=1",
+                "unhealthy=1",
+                "restarting=0",
+                "exited=1",
+                "",
+                "== CONTAINERS ==",
+                "api\tUp 2 hours (unhealthy)\tdemo/api:latest\t127.0.0.1:8000->8000/tcp",
+                "worker\tExited (1) 5 minutes ago\tdemo/worker:latest\t",
+                "",
+                "== INSPECT ==",
+                "/api\t3\trunning\tunhealthy\tfalse\t0",
+                "/worker\t1\texited\tnone\tfalse\t1",
+                "",
+                "== LIVE STATS ==",
+                "api\t1.25%\t128MiB / 1GiB\t12.50%\t1MB / 2MB\t5MB / 1MB",
+                "",
+                "== COMPOSE PROJECTS ==",
+                "fleetops-demo",
+                "",
+                "== DOCKER DISK ==",
+                "TYPE TOTAL ACTIVE SIZE RECLAIMABLE",
+                "Images 3 2 1.2GB 300MB (25%)",
+            ]
+        )
+
     async def collect_mail(self) -> str:
         return "\n".join(
             [
@@ -346,8 +376,9 @@ class DemoCollector:
             ]
         )
 
-    async def collect_docker_logs(self) -> str:
-        return "## api\nINFO demo request completed\nWARNING token=[REDACTED]"
+    async def collect_docker_logs(self, container: str | None = None) -> str:
+        name = container or "api"
+        return f"## {name}\nINFO demo request completed\nWARNING token=[REDACTED]"
 
     async def collect_audit(self) -> str:
         return "\n".join(

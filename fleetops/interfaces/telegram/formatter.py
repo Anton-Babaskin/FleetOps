@@ -1,11 +1,12 @@
 import html
-import re
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from fleetops.domain.mail import MailEvent
 from fleetops.domain.models import CheckResult, HealthResult
 from fleetops.domain.statuses import Status
+from fleetops.parsers.docker import parse_docker_report
+from fleetops.parsers.mail import parse_mail_events, parse_mail_stats
 from fleetops.security.redaction import redact
 
 ICONS = {
@@ -254,6 +255,62 @@ def format_docker(raw: str) -> str:
     return format_raw_report("🐳 Docker", raw, max_lines=35)
 
 
+def format_docker_deep(raw: str) -> str:
+    redacted = redact(raw).strip()
+    title = "🐳 Docker deep diagnostics"
+    if not redacted:
+        return f"{title}\n\nNo Docker output returned."
+    if redacted.startswith("ERROR:") or redacted.startswith("Docker "):
+        return f"{title}\n\n{redacted}"
+
+    report = parse_docker_report(redacted)
+    unhealthy = report.summary.get("unhealthy", 0)
+    restarting = report.summary.get("restarting", 0)
+    result_icon = "🔴" if unhealthy or restarting else "🟢"
+    lines = [
+        title,
+        "",
+        f"{result_icon} Containers: {report.summary.get('containers', 0)} total",
+        f"🟢 Running: {report.summary.get('running', 0)}",
+        f"🔴 Unhealthy: {unhealthy}",
+        f"🟡 Restarting: {restarting}",
+        f"⚪ Exited: {report.summary.get('exited', 0)}",
+    ]
+
+    issues = [
+        container
+        for container in report.containers
+        if container.health == "unhealthy"
+        or container.state == "restarting"
+        or container.oom_killed
+        or container.exit_code != 0
+        or container.restart_count > 0
+    ]
+    if issues:
+        lines.extend(["", "Needs attention:"])
+        for container in issues[:10]:
+            flags: list[str] = []
+            if container.health == "unhealthy":
+                flags.append("unhealthy")
+            if container.state == "restarting":
+                flags.append("restarting")
+            if container.oom_killed:
+                flags.append("OOM killed")
+            if container.exit_code:
+                flags.append(f"exit {container.exit_code}")
+            if container.restart_count:
+                flags.append(f"restarts {container.restart_count}")
+            lines.append(f"• {container.name}: {', '.join(flags)}")
+
+    if report.live_stats:
+        lines.extend(["", "Live resource usage:", *report.live_stats[:10]])
+    if report.compose_projects:
+        lines.extend(["", "Compose projects:", *[f"• {name}" for name in report.compose_projects]])
+    if report.disk:
+        lines.extend(["", "Docker disk usage:", *report.disk[:12]])
+    return "\n".join(lines)
+
+
 def format_mail(raw: str) -> str:
     redacted = redact(raw).strip()
     if not redacted:
@@ -312,107 +369,10 @@ def format_mail_tls(raw: str) -> str:
     return "\n".join(["🔐 Mail TLS", "", status, "", *redacted.splitlines()[:70]])
 
 
-@dataclass(frozen=True)
-class MailEvent:
-    kind: str
-    time: str
-    host: str
-    to_addr: str
-    from_addr: str
-    client: str
-    reason: str
-    relay: str
-    status: str
-    proto: str
-    helo: str
-    raw: str
-
-
-def _match_first(pattern: str, value: str) -> str:
-    match = re.search(pattern, value)
-    return match.group(1).strip() if match else ""
-
-
-def _mail_time_and_host(line: str) -> tuple[str, str]:
-    iso_match = re.match(r"^(\d{4}-\d\d-\d\dT\S+)\s+(\S+)\s+", line)
-    if iso_match:
-        return iso_match.group(1), iso_match.group(2)
-    syslog_match = re.match(r"^([A-Z][a-z]{2}\s+\d+\s+\d\d:\d\d:\d\d)\s+(\S+)\s+", line)
-    if syslog_match:
-        return syslog_match.group(1), syslog_match.group(2)
-    return "", ""
-
-
-def _split_reject_client_reason(line: str) -> tuple[str, str]:
-    marker = "reject: RCPT from "
-    if marker not in line:
-        return "", ""
-    tail = line.split(marker, 1)[1]
-    bracket_separator = tail.find("]: ")
-    if bracket_separator >= 0:
-        return tail[: bracket_separator + 1], tail[bracket_separator + 3 :]
-    if ": " in tail:
-        client, reason = tail.split(": ", 1)
-        return client, reason
-    return tail, ""
-
-
-def _clean_reason(reason: str) -> str:
-    cleaned = reason.split("; from=<", 1)[0].strip()
-    return cleaned.rstrip(",")
-
-
 def _truncate_field(value: str, limit: int = 180) -> str:
     if len(value) <= limit:
         return value
     return f"{value[: limit - 3]}..."
-
-
-def _parse_mail_event(line: str) -> MailEvent | None:
-    stripped = line.strip()
-    if not stripped:
-        return None
-    time, host = _mail_time_and_host(stripped)
-    from_addr = _match_first(r"from=<([^>]*)>", stripped)
-    to_addr = _match_first(r"to=<([^>]*)>", stripped)
-    proto = _match_first(r"\bproto=([^ ]+)", stripped)
-    helo = _match_first(r"\bhelo=<([^>]*)>", stripped)
-
-    if "reject: RCPT from " in stripped:
-        client, reason = _split_reject_client_reason(stripped)
-        kind = "greylisted" if "greylisted" in reason.lower() else "rejected"
-        return MailEvent(
-            kind=kind,
-            time=time,
-            host=host,
-            to_addr=to_addr or _match_first(r"\s<([^>]+)>:", reason),
-            from_addr=from_addr,
-            client=client,
-            reason=_clean_reason(reason),
-            relay="",
-            status="",
-            proto=proto,
-            helo=helo,
-            raw=stripped,
-        )
-
-    status = _match_first(r"\bstatus=(sent|bounced|deferred)\b", stripped)
-    if status:
-        return MailEvent(
-            kind=status,
-            time=time,
-            host=host,
-            to_addr=to_addr,
-            from_addr=from_addr,
-            client="",
-            reason=_match_first(r"\bstatus=(?:sent|bounced|deferred)\s+\((.*)\)", stripped),
-            relay=_match_first(r"\brelay=([^,]+)", stripped),
-            status=status,
-            proto=proto,
-            helo=helo,
-            raw=stripped,
-        )
-    return None
 
 
 def _mail_event_title(event: MailEvent) -> str:
@@ -467,8 +427,7 @@ def _format_mail_events(
     if redacted.startswith("ERROR:"):
         return f"{title}\n\n{redacted}"
 
-    parsed = [_parse_mail_event(line) for line in redacted.splitlines()]
-    events = [event for event in parsed if event is not None]
+    events = parse_mail_events(redacted)
     if kinds is not None:
         events = [event for event in events if event.kind in kinds]
 
@@ -548,26 +507,6 @@ def format_mail_search(raw: str, *, mode: str, query: str, since: str | None = N
     return "\n".join([lines[0], "", *context, *lines[1:]])
 
 
-def _parse_mail_stats(raw: str) -> tuple[dict[str, str], dict[str, list[str]]]:
-    values: dict[str, str] = {}
-    sections: dict[str, list[str]] = {}
-    current = ""
-    for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith("== ") and stripped.endswith(" =="):
-            current = stripped.strip("= ")
-            sections[current] = []
-            continue
-        if current == "MAIL STATS SUMMARY" and "=" in stripped:
-            key, value = stripped.split("=", 1)
-            values[key] = value
-        elif current:
-            sections.setdefault(current, []).append(stripped)
-    return values, sections
-
-
 def _format_stats_section(title: str, rows: list[str], limit: int = 8) -> list[str]:
     if not rows:
         return []
@@ -590,7 +529,8 @@ def format_mail_stats(raw: str) -> str:
     redacted = redact(raw).strip()
     if not redacted:
         return "📊 Mail stats\n\nNo mail statistics output returned."
-    values, sections = _parse_mail_stats(redacted)
+    stats = parse_mail_stats(redacted)
+    values, sections = stats.values, stats.sections
     lines = [
         "📊 Mail stats",
         "",
@@ -778,7 +718,8 @@ def format_incident(raw: str) -> str:
 
     mail_stats = "\n".join(sections.get("MAIL_STATS", []))
     if mail_stats.strip():
-        values, mail_sections = _parse_mail_stats(mail_stats)
+        stats = parse_mail_stats(mail_stats)
+        values, mail_sections = stats.values, stats.sections
         lines.extend(
             [
                 "",

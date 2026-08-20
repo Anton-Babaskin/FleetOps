@@ -1,5 +1,7 @@
 # FleetOps
 
+Текущий аудит кода и целевая структура: [docs/CODE_AUDIT.ru.md](docs/CODE_AUDIT.ru.md).
+
 **FleetOps** - это open-source DevOps assistant для быстрой диагностики Linux/VPS серверов без установки агента на сервер.
 
 Проект работает в первую очередь из терминала, а Telegram-бот используется как удобная удаленная панель. Сейчас FleetOps уже умеет проверять Linux, systemd, Docker и почтовую инфраструктуру Postfix/Mail-in-a-Box.
@@ -11,7 +13,8 @@
 - 🔌 SSH-сбор диагностики без агента на сервере
 - 🩺 Проверка load average, памяти, дисков и failed systemd units
 - 🧩 Обзор сервисов, портов, journal, процессов, reboot history и обновлений
-- 🐳 Docker summary и bounded docker logs
+- 🐳 Docker summary, health/restarts/OOM, ресурсы и bounded logs по контейнеру
+- ✅ GitHub Actions CI для Python 3.12 и 3.13
 - 📮 Mail diagnostics для Postfix/Dovecot/Mail-in-a-Box
 - 🤖 Красивые Telegram-ответы с emoji и inline-кнопками
 - 💻 Terminal CLI для всех ключевых команд
@@ -116,7 +119,9 @@ fleetops health
 fleetops services
 fleetops ports
 fleetops docker
+fleetops docker-deep
 fleetops docker-logs
+fleetops docker-logs nginx
 fleetops mail
 fleetops mail-stats
 fleetops mail-stats --since 24h
@@ -156,7 +161,8 @@ fleetops --json disk
 - `/journal` - последние warning/error journal lines
 - `/ports` - слушающие TCP/UDP порты
 - `/docker` - контейнеры и docker disk usage
-- `/dockerlogs` - bounded logs по контейнерам
+- `/dockerdeep` - health, restart count, OOM/exit code, CPU/RAM и Docker disk usage
+- `/dockerlogs [container]` - bounded logs выбранного или нескольких активных контейнеров
 - `/mail` - почтовое меню с кнопками
 - `/mailstats 24h` - статистика отправок, доменов, маршрутов и reject reasons за период
 - `/mailrejects 24h` - rejected и greylisted события за период
@@ -347,12 +353,9 @@ Telegram alerts можно добавить позже, после аккура�
 
 ### 6. 🐳 Docker глубже
 
-- container health
-- restart count
-- top containers by CPU/RAM
-- compose project detection
-- docker volume usage
-- logs by container name
+Базовая глубокая диагностика уже добавлена: container health, restart count, OOM/exit code,
+CPU/RAM, compose projects, disk usage и logs by container name. Следующий слой: события Docker,
+анализ healthcheck output и безопасное сравнение compose-конфигурации с runtime.
 
 ### 7. 📦 Упаковка MVP
 

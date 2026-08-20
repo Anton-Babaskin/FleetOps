@@ -24,6 +24,9 @@ class Collector(Protocol):
     async def collect_docker(self) -> str:
         """Collect Docker container and disk usage summary when Docker is installed."""
 
+    async def collect_docker_deep(self) -> str:
+        """Collect bounded Docker health, restart, resource, and disk details."""
+
     async def collect_mail(self) -> str:
         """Collect common mail service status summary when mail services are installed."""
 
@@ -78,8 +81,8 @@ class Collector(Protocol):
     async def collect_security(self) -> str:
         """Collect bounded login, firewall, and security service status."""
 
-    async def collect_docker_logs(self) -> str:
-        """Collect bounded logs for a small number of Docker containers."""
+    async def collect_docker_logs(self, container: str | None = None) -> str:
+        """Collect bounded logs for one selected or a small number of Docker containers."""
 
     async def collect_audit(self) -> str:
         """Collect a bounded read-only security and mail audit."""

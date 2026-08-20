@@ -17,6 +17,7 @@ Current status: **v0.1.0**. This first release intentionally supports one config
 - Demo mode without SSH
 - Docker Compose deployment
 - Unit tests for models, rules, redaction, formatter, and demo collector
+- GitHub Actions CI on Python 3.12 and 3.13
 
 ## Architecture
 
@@ -34,6 +35,9 @@ flowchart TD
 
 Core business logic does not depend on Telegram.
 
+The current architecture review and refactoring priorities are documented in
+[docs/CODE_AUDIT.ru.md](docs/CODE_AUDIT.ru.md).
+
 ## Project Layout
 
 ```text
@@ -42,6 +46,7 @@ fleetops/
   collectors/             Demo and SSH read-only collection backends
   domain/                 Pydantic models and status enums
   interfaces/telegram/    Telegram bot handlers and message formatters
+  parsers/                Postfix and Docker output parsers
   rules/                  Health status rules
   security/               Redaction helpers
   services/               Application services for health, diagnostics, and snapshots
@@ -156,7 +161,9 @@ snapshot:
 - `/journal` returns a bounded, redacted warning/error journal view.
 - `/ports` lists listening TCP/UDP sockets with a fixed limit.
 - `/docker` reports Docker containers and Docker disk usage when Docker is installed.
-- `/dockerlogs` returns bounded logs for up to three running Docker containers.
+- `/dockerdeep` reports health, restarts, OOM kills, exit codes, live usage, and disk usage.
+- `/dockerlogs [container]` returns bounded logs for one selected container or up to three
+  running containers.
 - `/mail` summarizes common mail services such as postfix, dovecot, nginx, and DKIM/DMARC.
 - `/maildns` checks hostname, Mail-in-a-Box identity hints, MX, A/AAAA, SPF, and DMARC.
 - `/mailtls` reports local postfix/dovecot certificate subject, issuer, and validity dates.
@@ -200,7 +207,9 @@ fleetops services
 fleetops journal
 fleetops ports
 fleetops docker
+fleetops docker-deep
 fleetops docker-logs
+fleetops docker-logs nginx
 fleetops mail
 fleetops mail-dns
 fleetops mail-tls

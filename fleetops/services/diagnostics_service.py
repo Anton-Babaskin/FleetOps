@@ -1,24 +1,15 @@
 import asyncio
+from collections.abc import Awaitable
 from datetime import UTC, datetime
+from time import monotonic
 
 from fleetops.collectors.base import Collector
 from fleetops.domain.models import HealthResult
-
-SINCE_UNITS = {"m", "h", "d"}
-
-
-def normalize_since(value: str | None) -> str | None:
-    if value is None:
-        return None
-    normalized = value.strip().lower()
-    if not normalized:
-        return None
-    if len(normalized) < 2 or normalized[-1] not in SINCE_UNITS:
-        raise ValueError("since must look like 30m, 1h, 24h, or 7d")
-    amount = normalized[:-1]
-    if not amount.isdigit() or int(amount) <= 0:
-        raise ValueError("since must use a positive number")
-    return normalized
+from fleetops.services.validation import (
+    normalize_container_name,
+    normalize_search_query,
+    normalize_since,
+)
 
 
 class DiagnosticsService:
@@ -36,6 +27,9 @@ class DiagnosticsService:
 
     async def get_docker(self) -> str:
         return await self.collector.collect_docker()
+
+    async def get_docker_deep(self) -> str:
+        return await self.collector.collect_docker_deep()
 
     async def get_mail(self) -> str:
         return await self.collector.collect_mail()
@@ -68,9 +62,7 @@ class DiagnosticsService:
         query: str,
         since: str | None = None,
     ) -> str:
-        cleaned_query = query.strip()
-        if not cleaned_query:
-            raise ValueError("mail search query is required")
+        cleaned_query = normalize_search_query(query)
         if mode not in {"any", "from", "to", "ip", "domain"}:
             raise ValueError("unsupported mail search mode")
         return await self.collector.collect_mail_search(
@@ -100,8 +92,8 @@ class DiagnosticsService:
     async def get_security(self) -> str:
         return await self.collector.collect_security()
 
-    async def get_docker_logs(self) -> str:
-        return await self.collector.collect_docker_logs()
+    async def get_docker_logs(self, container: str | None = None) -> str:
+        return await self.collector.collect_docker_logs(normalize_container_name(container))
 
     async def get_audit(self) -> str:
         return await self.collector.collect_audit()
@@ -109,15 +101,16 @@ class DiagnosticsService:
     async def get_incident(self, since: str | None = "24h") -> str:
         normalized_since = normalize_since(since) or "24h"
         started_at = datetime.now(UTC)
+        health_started = monotonic()
         health_checks = await self.collector.collect_health()
         health = HealthResult.from_checks(
             host=self.collector.host,
             collected_at=started_at,
-            duration_ms=0,
+            duration_ms=int((monotonic() - health_started) * 1000),
             checks=health_checks,
         )
 
-        async def safe_collect(label: str, awaitable) -> tuple[str, str]:
+        async def safe_collect(label: str, awaitable: Awaitable[str]) -> tuple[str, str]:
             try:
                 return label, await awaitable
             except Exception as exc:

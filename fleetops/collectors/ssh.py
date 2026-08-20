@@ -61,7 +61,8 @@ filter_since() {
   fi
   cutoff=$(date -d "$seconds seconds ago" +%s 2>/dev/null || echo 0)
   year=$(date +%Y)
-  awk -v cutoff="$cutoff" -v year="$year" '
+  now=$(date +%s)
+  awk -v cutoff="$cutoff" -v year="$year" -v now="$now" '
     BEGIN {
       month["Jan"]=1; month["Feb"]=2; month["Mar"]=3; month["Apr"]=4;
       month["May"]=5; month["Jun"]=6; month["Jul"]=7; month["Aug"]=8;
@@ -70,11 +71,17 @@ filter_since() {
     /^[A-Z][a-z][a-z][ ]+[0-9]+ [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/ {
       split($3, t, ":");
       epoch=mktime(year " " month[$1] " " $2 " " t[1] " " t[2] " " t[3]);
+      if (epoch > now + 86400) {
+        epoch=mktime((year - 1) " " month[$1] " " $2 " " t[1] " " t[2] " " t[3]);
+      }
       if (epoch >= cutoff) print;
       next;
     }
     /^[0-9][0-9][0-9][0-9]-/ {
-      print;
+      stamp=substr($0, 1, 19);
+      gsub(/[-T:]/, " ", stamp);
+      epoch=mktime(stamp);
+      if (epoch >= cutoff) print;
       next;
     }
     cutoff <= 0 { print; }
@@ -186,6 +193,64 @@ class SSHCollector:
             "docker ps -a --format 'table {{.Names}}\\t{{.Status}}\\t{{.Ports}}'; "
             "echo; echo '## docker system df'; docker system df; "
             "else echo 'Docker is not installed or not in PATH.'; fi"
+        )
+        return await self._collect_report(command)
+
+    async def collect_docker_deep(self) -> str:
+        command = self._bash_script(
+            r"""
+set +e
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed or not in PATH."
+  exit 0
+fi
+if ! timeout 3s docker info >/dev/null 2>&1; then
+  echo "Docker daemon is unavailable or access is denied."
+  exit 0
+fi
+
+all=$(docker ps -aq 2>/dev/null | wc -l)
+running=$(docker ps -q 2>/dev/null | wc -l)
+unhealthy=$(docker ps -q --filter health=unhealthy 2>/dev/null | wc -l)
+restarting=$(docker ps -q --filter status=restarting 2>/dev/null | wc -l)
+exited=$(docker ps -q --filter status=exited 2>/dev/null | wc -l)
+
+echo "== DOCKER SUMMARY =="
+echo "containers=$all"
+echo "running=$running"
+echo "unhealthy=$unhealthy"
+echo "restarting=$restarting"
+echo "exited=$exited"
+echo
+
+echo "== CONTAINERS =="
+docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}' | head -n 40
+echo
+
+echo "== INSPECT =="
+ids=$(docker ps -aq 2>/dev/null | head -n 40)
+if [ -n "$ids" ]; then
+  docker inspect --format '{{.Name}}\t{{.RestartCount}}\t{{.State.Status}}\t{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}\t{{.State.OOMKilled}}\t{{.State.ExitCode}}' $ids 2>/dev/null
+else
+  echo "No Docker containers."
+fi
+echo
+
+echo "== LIVE STATS =="
+if [ "$running" -gt 0 ]; then
+  timeout 4s docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}' 2>/dev/null | head -n 30
+else
+  echo "No running containers."
+fi
+echo
+
+echo "== COMPOSE PROJECTS =="
+docker ps -a --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | sed '/^$/d' | sort -u | head -n 20
+echo
+
+echo "== DOCKER DISK =="
+timeout 3s docker system df 2>&1 | head -n 30
+"""
         )
         return await self._collect_report(command)
 
@@ -642,14 +707,38 @@ printf "%s\n" "$events" | tail -n 80
         )
         return await self._collect_report(command)
 
-    async def collect_docker_logs(self) -> str:
-        command = (
-            "if command -v docker >/dev/null 2>&1; then "
-            "names=$(docker ps --format '{{.Names}}' | head -n 3); "
-            "if [ -z \"$names\" ]; then echo 'No running Docker containers.'; "
-            "else for name in $names; do echo \"## $name\"; docker logs --tail 30 \"$name\" 2>&1; "
-            "echo; done; fi; "
-            "else echo 'Docker is not installed or not in PATH.'; fi"
+    async def collect_docker_logs(self, container: str | None = None) -> str:
+        command = self._bash_script(
+            r"""
+set +e
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed or not in PATH."
+  exit 0
+fi
+target="${FLEETOPS_DOCKER_CONTAINER:-}"
+if [ -n "$target" ]; then
+  if ! docker container inspect "$target" >/dev/null 2>&1; then
+    echo "Container not found: $target"
+    exit 0
+  fi
+  names="$target"
+else
+  names=$(docker ps --format '{{.Names}}' 2>/dev/null | head -n 3)
+fi
+if [ -z "$names" ]; then
+  echo "No running Docker containers."
+  exit 0
+fi
+while IFS= read -r name; do
+  [ -z "$name" ] && continue
+  echo "## $name"
+  timeout 8s docker logs --timestamps --tail 50 "$name" 2>&1 | tail -n 50
+  echo
+done <<FLEETOPS_CONTAINERS
+$names
+FLEETOPS_CONTAINERS
+""",
+            FLEETOPS_DOCKER_CONTAINER=container,
         )
         return await self._collect_report(command)
 
@@ -847,8 +936,11 @@ if [ "$critical" -gt 0 ]; then echo "RESULT: CRITICAL"; elif [ "$warn" -gt 0 ]; 
     async def _run_report(self, conn: asyncssh.SSHClientConnection, command: str) -> str:
         result = await conn.run(command, check=False, timeout=self.config.timeouts.command_seconds)
         output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
-        if result.exit_status != 0 and not output:
-            return f"ERROR: remote command failed with exit status {result.exit_status}"
+        if result.exit_status != 0:
+            detail = output[:500] or "remote command returned no output"
+            raise SSHCommandError(
+                f"remote command failed with exit status {result.exit_status}: {detail}"
+            )
         return output
 
     async def _timed_parse(

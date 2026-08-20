@@ -31,14 +31,18 @@ async def async_main(argv: list[str] | None = None) -> int:
         logging.error("startup failed: %s", exc)
         raise SystemExit(2) from exc
 
-    return await run_cli(
-        args=args,
-        config=config,
-        diagnostics_service=DiagnosticsService(collector),
-        health_service=HealthService(collector),
-        snapshot_service=SnapshotService(collector, config.snapshot),
-        env=env,
-    )
+    try:
+        return await run_cli(
+            args=args,
+            config=config,
+            diagnostics_service=DiagnosticsService(collector),
+            health_service=HealthService(collector),
+            snapshot_service=SnapshotService(collector, config.snapshot),
+            env=env,
+        )
+    except ValueError as exc:
+        logging.error("command failed: %s", exc)
+        return 2
 
 
 def main() -> None:

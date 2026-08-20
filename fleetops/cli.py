@@ -11,6 +11,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_audit,
     format_check_detail,
     format_docker,
+    format_docker_deep,
     format_docker_logs,
     format_greylist,
     format_health,
@@ -78,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
         "journal",
         "ports",
         "docker",
+        "docker-deep",
         "docker-logs",
         "mail",
         "mail-dns",
@@ -105,6 +107,12 @@ def build_parser() -> argparse.ArgumentParser:
         "status",
     ):
         command_parser = subparsers.add_parser(command)
+        if command == "docker-logs":
+            command_parser.add_argument(
+                "container",
+                nargs="?",
+                help="optional Docker container name; defaults to up to three running containers",
+            )
         if command in time_window_commands:
             command_parser.add_argument(
                 "--since",
@@ -185,7 +193,8 @@ async def run_cli(
         "journal": diagnostics_service.get_journal,
         "ports": diagnostics_service.get_ports,
         "docker": diagnostics_service.get_docker,
-        "docker-logs": diagnostics_service.get_docker_logs,
+        "docker-deep": diagnostics_service.get_docker_deep,
+        "docker-logs": lambda: diagnostics_service.get_docker_logs(args.container),
         "mail": diagnostics_service.get_mail,
         "mail-dns": diagnostics_service.get_mail_dns,
         "mail-tls": diagnostics_service.get_mail_tls,
@@ -209,6 +218,7 @@ async def run_cli(
         "journal": format_journal,
         "ports": format_ports,
         "docker": format_docker,
+        "docker-deep": format_docker_deep,
         "docker-logs": format_docker_logs,
         "mail": format_mail,
         "mail-dns": format_mail_dns,
