@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml"><img src="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml/badge.svg?branch=codex%2Fdevops-mail-mvp" alt="CI"></a>
+  <a href="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml"><img src="https://github.com/Anton-Babaskin/FleetOps/actions/workflows/ci.yml/badge.svg?branch=devops-mail-mvp" alt="CI"></a>
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/version-0.1.0-1f6feb" alt="Version 0.1.0">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3fb950" alt="MIT license"></a>
