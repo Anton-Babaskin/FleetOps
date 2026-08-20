@@ -4,11 +4,15 @@ services:
     build: .
     env_file:
       - .env
+    environment:
+      FLEETOPS_CONFIG_PATH: /app/config/hosts.yml
+      FLEETOPS_SSH_PRIVATE_KEY_PATH: /run/secrets/fleetops_ssh_key
+      FLEETOPS_SSH_KNOWN_HOSTS_PATH: /run/secrets/fleetops_known_hosts
     volumes:
       - ./config/hosts.yml:/app/config/hosts.yml:ro
       - ./snapshots:/tmp/fleetops
-      - ${FLEETOPS_SSH_PRIVATE_KEY_PATH:-./missing_ssh_key}:/run/secrets/fleetops_ssh_key:ro
-      - ${FLEETOPS_SSH_KNOWN_HOSTS_PATH:-./missing_known_hosts}:/run/secrets/fleetops_known_hosts:ro
+      - ${FLEETOPS_SSH_PRIVATE_KEY_SOURCE:-./missing_ssh_key}:/run/secrets/fleetops_ssh_key:ro
+      - ${FLEETOPS_SSH_KNOWN_HOSTS_SOURCE:-./missing_known_hosts}:/run/secrets/fleetops_known_hosts:ro
     restart: unless-stopped
 
   fleetops-demo:

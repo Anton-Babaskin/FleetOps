@@ -16,10 +16,12 @@ from fleetops.interfaces.telegram.formatter import (
     format_audit_detail,
     format_check_detail,
     format_docker,
+    format_docker_deep,
     format_docker_logs,
     format_greylist,
     format_greylist_detail,
     format_health,
+    format_incident,
     format_journal,
     format_mail,
     format_mail_delivery,
@@ -27,6 +29,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_mail_logs,
     format_mail_queue,
     format_mail_rejections,
+    format_mail_search,
     format_mail_service_logs,
     format_mail_stats,
     format_mail_tls,
@@ -41,6 +44,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_top,
     format_updates,
 )
+from fleetops.interfaces.telegram.messages import split_message
 from fleetops.services.diagnostics_service import DiagnosticsService
 from fleetops.services.health_service import HealthService
 from fleetops.services.snapshot_service import SnapshotService
@@ -63,6 +67,25 @@ def build_router(
 
     def is_allowed(message: Message) -> bool:
         return message.from_user is not None and is_allowed_user(message.from_user.id)
+
+    def command_tail(message: Message) -> str:
+        text = message.text or ""
+        parts = text.split(maxsplit=1)
+        return parts[1].strip() if len(parts) > 1 else ""
+
+    def parse_since_arg(message: Message) -> str | None:
+        tail = command_tail(message)
+        return tail or None
+
+    def parse_search_args(message: Message) -> tuple[str, str | None]:
+        parts = command_tail(message).split()
+        if not parts:
+            return "", None
+        since = None
+        if len(parts) > 1 and parts[-1][-1:].lower() in {"m", "h", "d"}:
+            since = parts[-1]
+            parts = parts[:-1]
+        return " ".join(parts), since
 
     def details_keyboard(target: str) -> InlineKeyboardMarkup:
         return InlineKeyboardMarkup(
@@ -94,12 +117,7 @@ def build_router(
         )
 
     async def answer_chunks(message: Message, text: str) -> None:
-        max_length = 3800
-        if len(text) <= max_length:
-            await message.answer(text)
-            return
-        chunks = [text[index : index + max_length] for index in range(0, len(text), max_length)]
-        for chunk in chunks:
+        for chunk in split_message(text):
             await message.answer(chunk)
 
     async def answer_check_detail(message: Message, check_name: str) -> None:
@@ -139,14 +157,20 @@ def build_router(
                     "/journal - show recent warning/error journal lines",
                     "/ports - show listening TCP/UDP sockets",
                     "/docker - show Docker containers and disk usage",
-                    "/dockerlogs - show bounded logs for running containers",
+                    "/dockerdeep - show container health, restarts, resources, and disk usage",
+                    "/dockerlogs [container] - show bounded logs for selected/running containers",
                     "/mail - show common mail service status",
                     "/maildns - show mail DNS records",
                     "/mailtls - show mail TLS certificate details",
-                    "/maillogs - show parsed send/reject/defer mail flow",
-                    "/mailstats - show aggregate mail flow domains, routes, relays, and reasons",
-                    "/mailrejects - show rejected and greylisted mail events",
-                    "/maildelivery - show sent/deferred/bounced mail events",
+                    "/maillogs [1h|24h|7d] - show parsed send/reject/defer mail flow",
+                    "/mailstats [1h|24h|7d] - show aggregate mail flow statistics",
+                    "/mailrejects [1h|24h|7d] - show rejected and greylisted mail events",
+                    "/maildelivery [1h|24h|7d] - show sent/deferred/bounced mail events",
+                    "/mailsearch <text> [1h|24h|7d] - search parsed mail events",
+                    "/mailfrom <email/domain> [1h|24h|7d] - search by sender",
+                    "/mailto <email/domain> [1h|24h|7d] - search by recipient",
+                    "/mailip <ip> [1h|24h|7d] - search by client/relay IP",
+                    "/maildomain <domain> [1h|24h|7d] - search by sender/recipient domain",
                     "/mailservice - show bounded mail service lifecycle logs",
                     "/greylist - show postgrey statistics and recent events",
                     "/queue - show mail queue summary",
@@ -156,6 +180,7 @@ def build_router(
                     "/updates - show package update hints",
                     "/security - show sessions, logins, firewall/security services",
                     "/audit - run read-only security and mail audit",
+                    "/incident [1h|24h|7d] - build a compact incident report",
                     "/snapshot - create a redacted diagnostic snapshot",
                     "/status - show bot/runtime status",
                     "/whoami - show your numeric Telegram ID",
@@ -244,15 +269,28 @@ def build_router(
             return
         await answer_chunks(message, format_docker(await diagnostics_service.get_docker()))
 
-    @router.message(Command("dockerlogs"))
-    async def dockerlogs(message: Message) -> None:
+    @router.message(Command("dockerdeep"))
+    async def dockerdeep(message: Message) -> None:
         if not is_allowed(message):
             await message.answer("Access denied.")
             return
         await answer_chunks(
             message,
-            format_docker_logs(await diagnostics_service.get_docker_logs()),
+            format_docker_deep(await diagnostics_service.get_docker_deep()),
         )
+
+    @router.message(Command("dockerlogs"))
+    async def dockerlogs(message: Message) -> None:
+        if not is_allowed(message):
+            await message.answer("Access denied.")
+            return
+        container = command_tail(message) or None
+        try:
+            raw = await diagnostics_service.get_docker_logs(container)
+        except ValueError as exc:
+            await message.answer(f"Bad container name: {exc}")
+            return
+        await answer_chunks(message, format_docker_logs(raw))
 
     @router.message(Command("mail"))
     async def mail(message: Message) -> None:
@@ -283,23 +321,41 @@ def build_router(
         if not is_allowed(message):
             await message.answer("Access denied.")
             return
-        await answer_chunks(message, format_mail_logs(await diagnostics_service.get_mail_logs()))
+        since = parse_since_arg(message)
+        try:
+            raw = await diagnostics_service.get_mail_logs(since)
+        except ValueError as exc:
+            await message.answer(f"Bad time window: {exc}")
+            return
+        await answer_chunks(message, format_mail_logs(raw))
 
     @router.message(Command("mailstats"))
     async def mailstats(message: Message) -> None:
         if not is_allowed(message):
             await message.answer("Access denied.")
             return
-        await answer_chunks(message, format_mail_stats(await diagnostics_service.get_mail_stats()))
+        since = parse_since_arg(message)
+        try:
+            raw = await diagnostics_service.get_mail_stats(since)
+        except ValueError as exc:
+            await message.answer(f"Bad time window: {exc}")
+            return
+        await answer_chunks(message, format_mail_stats(raw))
 
     @router.message(Command("mailrejects"))
     async def mailrejects(message: Message) -> None:
         if not is_allowed(message):
             await message.answer("Access denied.")
             return
+        since = parse_since_arg(message)
+        try:
+            raw = await diagnostics_service.get_mail_rejections(since)
+        except ValueError as exc:
+            await message.answer(f"Bad time window: {exc}")
+            return
         await answer_chunks(
             message,
-            format_mail_rejections(await diagnostics_service.get_mail_rejections()),
+            format_mail_rejections(raw),
         )
 
     @router.message(Command("maildelivery"))
@@ -307,10 +363,55 @@ def build_router(
         if not is_allowed(message):
             await message.answer("Access denied.")
             return
+        since = parse_since_arg(message)
+        try:
+            raw = await diagnostics_service.get_mail_delivery(since)
+        except ValueError as exc:
+            await message.answer(f"Bad time window: {exc}")
+            return
         await answer_chunks(
             message,
-            format_mail_delivery(await diagnostics_service.get_mail_delivery()),
+            format_mail_delivery(raw),
         )
+
+    async def answer_mail_search(message: Message, mode: str) -> None:
+        if not is_allowed(message):
+            await message.answer("Access denied.")
+            return
+        query, since = parse_search_args(message)
+        if not query:
+            await message.answer("Usage: /mailsearch <text> [1h|24h|7d]")
+            return
+        try:
+            raw = await diagnostics_service.get_mail_search(
+                mode=mode,
+                query=query,
+                since=since,
+            )
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+        await answer_chunks(message, format_mail_search(raw, mode=mode, query=query, since=since))
+
+    @router.message(Command("mailsearch"))
+    async def mailsearch(message: Message) -> None:
+        await answer_mail_search(message, "any")
+
+    @router.message(Command("mailfrom"))
+    async def mailfrom(message: Message) -> None:
+        await answer_mail_search(message, "from")
+
+    @router.message(Command("mailto"))
+    async def mailto(message: Message) -> None:
+        await answer_mail_search(message, "to")
+
+    @router.message(Command("mailip"))
+    async def mailip(message: Message) -> None:
+        await answer_mail_search(message, "ip")
+
+    @router.message(Command("maildomain"))
+    async def maildomain(message: Message) -> None:
+        await answer_mail_search(message, "domain")
 
     @router.message(Command("mailservice"))
     async def mailservice(message: Message) -> None:
@@ -383,6 +484,19 @@ def build_router(
             format_audit(await diagnostics_service.get_audit()),
             reply_markup=details_keyboard("audit"),
         )
+
+    @router.message(Command("incident"))
+    async def incident(message: Message) -> None:
+        if not is_allowed(message):
+            await message.answer("Access denied.")
+            return
+        since = parse_since_arg(message) or "24h"
+        try:
+            raw = await diagnostics_service.get_incident(since)
+        except ValueError as exc:
+            await message.answer(f"Bad time window: {exc}")
+            return
+        await answer_chunks(message, format_incident(raw))
 
     @router.callback_query(F.data == "details:services")
     async def services_details(callback: CallbackQuery) -> None:

@@ -1,5 +1,6 @@
 # ruff: noqa: E501
 import asyncio
+import shlex
 from collections.abc import Awaitable, Callable
 from time import monotonic
 
@@ -25,6 +26,70 @@ class SSHCommandError(RuntimeError):
     pass
 
 
+MAIL_SCRIPT_HELPERS = r"""
+mail_since_seconds() {
+  case "${FLEETOPS_MAIL_SINCE:-}" in
+    "") return 1 ;;
+    *m) echo "$(( ${FLEETOPS_MAIL_SINCE%m} * 60 ))" ;;
+    *h) echo "$(( ${FLEETOPS_MAIL_SINCE%h} * 3600 ))" ;;
+    *d) echo "$(( ${FLEETOPS_MAIL_SINCE%d} * 86400 ))" ;;
+    *) return 1 ;;
+  esac
+}
+
+mail_stream() {
+  if ls /var/log/mail.log* >/dev/null 2>&1; then
+    for file in $(ls -1tr /var/log/mail.log* 2>/dev/null | tail -n 8); do
+      case "$file" in
+        *.gz) zcat -f "$file" 2>/dev/null ;;
+        *) cat "$file" 2>/dev/null ;;
+      esac
+    done
+  else
+    journal_since="7 days ago"
+    if seconds=$(mail_since_seconds); then
+      journal_since="$seconds seconds ago"
+    fi
+    timeout 5s journalctl -u postfix --since "$journal_since" --no-pager --output=short-iso 2>/dev/null
+  fi
+}
+
+filter_since() {
+  if ! seconds=$(mail_since_seconds); then
+    cat
+    return
+  fi
+  cutoff=$(date -d "$seconds seconds ago" +%s 2>/dev/null || echo 0)
+  year=$(date +%Y)
+  now=$(date +%s)
+  awk -v cutoff="$cutoff" -v year="$year" -v now="$now" '
+    BEGIN {
+      month["Jan"]=1; month["Feb"]=2; month["Mar"]=3; month["Apr"]=4;
+      month["May"]=5; month["Jun"]=6; month["Jul"]=7; month["Aug"]=8;
+      month["Sep"]=9; month["Oct"]=10; month["Nov"]=11; month["Dec"]=12;
+    }
+    /^[A-Z][a-z][a-z][ ]+[0-9]+ [0-9][0-9]:[0-9][0-9]:[0-9][0-9]/ {
+      split($3, t, ":");
+      epoch=mktime(year " " month[$1] " " $2 " " t[1] " " t[2] " " t[3]);
+      if (epoch > now + 86400) {
+        epoch=mktime((year - 1) " " month[$1] " " $2 " " t[1] " " t[2] " " t[3]);
+      }
+      if (epoch >= cutoff) print;
+      next;
+    }
+    /^[0-9][0-9][0-9][0-9]-/ {
+      stamp=substr($0, 1, 19);
+      gsub(/[-T:]/, " ", stamp);
+      epoch=mktime(stamp);
+      if (epoch >= cutoff) print;
+      next;
+    }
+    cutoff <= 0 { print; }
+  '
+}
+"""
+
+
 class SSHCollector:
     def __init__(self, config: AppConfig, env: EnvSettings) -> None:
         if env.ssh_known_hosts_path is None:
@@ -32,6 +97,15 @@ class SSHCollector:
         self.config = config
         self.env = env
         self.host = HostIdentity(id=config.host.id, hostname=config.host.hostname)
+
+    def _bash_script(self, script: str, **env: str | int | None) -> str:
+        assignments = " ".join(
+            f"{key}={shlex.quote(str(value))}"
+            for key, value in env.items()
+            if value is not None
+        )
+        prefix = f"{assignments} " if assignments else ""
+        return f"{prefix}bash <<'FLEETOPS_BASH'\n{script}\nFLEETOPS_BASH"
 
     async def collect_health(self) -> list[CheckResult]:
         try:
@@ -122,6 +196,64 @@ class SSHCollector:
         )
         return await self._collect_report(command)
 
+    async def collect_docker_deep(self) -> str:
+        command = self._bash_script(
+            r"""
+set +e
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed or not in PATH."
+  exit 0
+fi
+if ! timeout 3s docker info >/dev/null 2>&1; then
+  echo "Docker daemon is unavailable or access is denied."
+  exit 0
+fi
+
+all=$(docker ps -aq 2>/dev/null | wc -l)
+running=$(docker ps -q 2>/dev/null | wc -l)
+unhealthy=$(docker ps -q --filter health=unhealthy 2>/dev/null | wc -l)
+restarting=$(docker ps -q --filter status=restarting 2>/dev/null | wc -l)
+exited=$(docker ps -q --filter status=exited 2>/dev/null | wc -l)
+
+echo "== DOCKER SUMMARY =="
+echo "containers=$all"
+echo "running=$running"
+echo "unhealthy=$unhealthy"
+echo "restarting=$restarting"
+echo "exited=$exited"
+echo
+
+echo "== CONTAINERS =="
+docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.Image}}\t{{.Ports}}' | head -n 40
+echo
+
+echo "== INSPECT =="
+ids=$(docker ps -aq 2>/dev/null | head -n 40)
+if [ -n "$ids" ]; then
+  docker inspect --format '{{.Name}}\t{{.RestartCount}}\t{{.State.Status}}\t{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}\t{{.State.OOMKilled}}\t{{.State.ExitCode}}' $ids 2>/dev/null
+else
+  echo "No Docker containers."
+fi
+echo
+
+echo "== LIVE STATS =="
+if [ "$running" -gt 0 ]; then
+  timeout 4s docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.BlockIO}}' 2>/dev/null | head -n 30
+else
+  echo "No running containers."
+fi
+echo
+
+echo "== COMPOSE PROJECTS =="
+docker ps -a --format '{{.Label "com.docker.compose.project"}}' 2>/dev/null | sed '/^$/d' | sort -u | head -n 20
+echo
+
+echo "== DOCKER DISK =="
+timeout 3s docker system df 2>&1 | head -n 30
+"""
+        )
+        return await self._collect_report(command)
+
     async def collect_mail(self) -> str:
         command = (
             "for svc in postfix dovecot nginx opendkim opendmarc spamassassin "
@@ -182,62 +314,55 @@ class SSHCollector:
         )
         return await self._collect_report(command)
 
-    async def collect_mail_logs(self) -> str:
-        command = r"""bash -lc '
+    async def collect_mail_logs(self, since: str | None = None) -> str:
+        command = self._bash_script(
+            MAIL_SCRIPT_HELPERS
+            + r"""
 set +e
-pattern="NOQUEUE: reject|reject: RCPT|status=(sent|bounced|deferred)"
-if ls /var/log/mail.log* >/dev/null 2>&1; then
-  for file in $(ls -1tr /var/log/mail.log* 2>/dev/null); do
-    case "$file" in
-      *.gz) zgrep -hE "$pattern" "$file" 2>/dev/null ;;
-      *) grep -hE "$pattern" "$file" 2>/dev/null ;;
-    esac
-  done | tail -n 100
-else
-  timeout 5s journalctl -u postfix --since "24 hours ago" --no-pager --output=short-iso 2>/dev/null \
-    | grep -E "$pattern" | tail -n 100 || true
-fi
-'"""
+mail_stream \
+  | tail -n 20000 \
+  | filter_since \
+  | grep -E "NOQUEUE: reject|reject: RCPT|status=(sent|bounced|deferred)" \
+  | tail -n 100 || true
+""",
+            FLEETOPS_MAIL_SINCE=since,
+        )
         return await self._collect_report(command)
 
-    async def collect_mail_rejections(self) -> str:
-        command = r"""bash -lc '
+    async def collect_mail_rejections(self, since: str | None = None) -> str:
+        command = self._bash_script(
+            MAIL_SCRIPT_HELPERS
+            + r"""
 set +e
-pattern="NOQUEUE: reject|reject: RCPT"
-if ls /var/log/mail.log* >/dev/null 2>&1; then
-  for file in $(ls -1tr /var/log/mail.log* 2>/dev/null); do
-    case "$file" in
-      *.gz) zgrep -hE "$pattern" "$file" 2>/dev/null ;;
-      *) grep -hE "$pattern" "$file" 2>/dev/null ;;
-    esac
-  done | tail -n 80
-else
-  timeout 5s journalctl -u postfix --since "7 days ago" --no-pager --output=short-iso 2>/dev/null \
-    | grep -E "$pattern" | tail -n 80 || true
-fi
-'"""
+mail_stream \
+  | tail -n 20000 \
+  | filter_since \
+  | grep -E "NOQUEUE: reject|reject: RCPT" \
+  | tail -n 80 || true
+""",
+            FLEETOPS_MAIL_SINCE=since,
+        )
         return await self._collect_report(command)
 
-    async def collect_mail_delivery(self) -> str:
-        command = r"""bash -lc '
+    async def collect_mail_delivery(self, since: str | None = None) -> str:
+        command = self._bash_script(
+            MAIL_SCRIPT_HELPERS
+            + r"""
 set +e
-pattern="status=(sent|bounced|deferred)"
-if ls /var/log/mail.log* >/dev/null 2>&1; then
-  for file in $(ls -1tr /var/log/mail.log* 2>/dev/null); do
-    case "$file" in
-      *.gz) zgrep -hE "$pattern" "$file" 2>/dev/null ;;
-      *) grep -hE "$pattern" "$file" 2>/dev/null ;;
-    esac
-  done | tail -n 80
-else
-  timeout 5s journalctl -u postfix --since "7 days ago" --no-pager --output=short-iso 2>/dev/null \
-    | grep -E "$pattern" | tail -n 80 || true
-fi
-'"""
+mail_stream \
+  | tail -n 20000 \
+  | filter_since \
+  | grep -E "status=(sent|bounced|deferred)" \
+  | tail -n 80 || true
+""",
+            FLEETOPS_MAIL_SINCE=since,
+        )
         return await self._collect_report(command)
 
-    async def collect_mail_stats(self) -> str:
-        command = r"""bash -lc '
+    async def collect_mail_stats(self, since: str | None = None) -> str:
+        command = self._bash_script(
+            MAIL_SCRIPT_HELPERS
+            + r"""
 set +e
 declare -A q_from q_size from_domains to_domains routes relays reject_reasons volume_bytes volume_count
 sent=0
@@ -364,18 +489,10 @@ while IFS= read -r line; do
     reject_reasons[$reason_key]=$(( ${reject_reasons[$reason_key]:-0} + 1 ))
   fi
 done < <(
-  {
-    if ls /var/log/mail.log* >/dev/null 2>&1; then
-      for file in $(ls -1tr /var/log/mail.log* 2>/dev/null | tail -n 8); do
-        case "$file" in
-          *.gz) zcat -f "$file" 2>/dev/null ;;
-          *) cat "$file" 2>/dev/null ;;
-        esac
-      done
-    else
-      timeout 5s journalctl -u postfix --since "7 days ago" --no-pager --output=short-iso 2>/dev/null
-    fi
-  } | tail -n 20000
+  mail_stream \
+    | tail -n 20000 \
+    | filter_since \
+    | grep -E "postfix/qmgr.*from=<|reject: RCPT from|status=(sent|bounced|deferred)" || true
 )
 
 echo "== MAIL STATS SUMMARY =="
@@ -398,7 +515,110 @@ for key in "${!volume_bytes[@]}"; do
   count="${volume_count[$key]:-0}"
   awk -v bytes="$bytes" -v count="$count" -v key="$key" "BEGIN {printf \"%.1f MB %s %s\\n\", bytes / 1024 / 1024, count, key}"
 done | sort -rn | head -n 10
-'"""
+""",
+            FLEETOPS_MAIL_SINCE=since,
+        )
+        return await self._collect_report(command)
+
+    async def collect_mail_search(
+        self,
+        *,
+        mode: str,
+        query: str,
+        since: str | None = None,
+    ) -> str:
+        command = self._bash_script(
+            MAIL_SCRIPT_HELPERS
+            + r"""
+set +e
+declare -A q_from
+qid_re=": ([A-F0-9]{5,}): "
+from_re="from=<([^>]*)>"
+to_re="to=<([^>]*)>"
+query="${FLEETOPS_MAIL_QUERY,,}"
+mode="${FLEETOPS_MAIL_MODE:-any}"
+
+domain_of() {
+  value="$1"
+  if [[ "$value" == *"@"* ]]; then
+    value="${value##*@}"
+  fi
+  value="${value,,}"
+  value="${value%.}"
+  printf "%s" "$value"
+}
+
+matches_query() {
+  line="$1"
+  from="$2"
+  to="$3"
+  lower_line="${line,,}"
+  case "$mode" in
+    from)
+      [[ "${from,,}" == *"$query"* ]]
+      ;;
+    to)
+      [[ "${to,,}" == *"$query"* ]]
+      ;;
+    ip)
+      [[ "$lower_line" == *"$query"* ]]
+      ;;
+    domain)
+      from_domain="$(domain_of "$from")"
+      to_domain="$(domain_of "$to")"
+      [[ "$from_domain" == *"$query"* || "$to_domain" == *"$query"* || "$lower_line" == *"$query"* ]]
+      ;;
+    *)
+      [[ "$lower_line" == *"$query"* || "${from,,}" == *"$query"* || "${to,,}" == *"$query"* ]]
+      ;;
+  esac
+}
+
+while IFS= read -r line; do
+  qid=""
+  if [[ "$line" =~ $qid_re ]]; then
+    qid="${BASH_REMATCH[1]}"
+  fi
+
+  if [[ "$line" == *"postfix/qmgr"* && -n "$qid" && "$line" =~ $from_re ]]; then
+    q_from[$qid]="${BASH_REMATCH[1]}"
+    continue
+  fi
+
+  if [[ "$line" != *"reject: RCPT from"* && "$line" != *"status=sent"* && "$line" != *"status=deferred"* && "$line" != *"status=bounced"* ]]; then
+    continue
+  fi
+
+  from=""
+  to=""
+  if [[ "$line" =~ $from_re ]]; then
+    from="${BASH_REMATCH[1]}"
+  elif [ -n "$qid" ]; then
+    from="${q_from[$qid]:-}"
+  fi
+  if [[ "$line" =~ $to_re ]]; then
+    to="${BASH_REMATCH[1]}"
+  fi
+
+  output="$line"
+  if [ -n "$from" ] && [[ "$output" != *"from=<"* ]]; then
+    output="$output from=<$from>"
+  fi
+
+  if matches_query "$output" "$from" "$to"; then
+    printf "%s\n" "$output"
+  fi
+done < <(
+  mail_stream \
+    | tail -n 12000 \
+    | filter_since \
+    | grep -E "postfix/qmgr.*from=<|reject: RCPT from|status=(sent|bounced|deferred)" || true
+) | tail -n 80
+""",
+            FLEETOPS_MAIL_MODE=mode,
+            FLEETOPS_MAIL_QUERY=query,
+            FLEETOPS_MAIL_SINCE=since,
+        )
         return await self._collect_report(command)
 
     async def collect_mail_service_logs(self) -> str:
@@ -487,14 +707,38 @@ printf "%s\n" "$events" | tail -n 80
         )
         return await self._collect_report(command)
 
-    async def collect_docker_logs(self) -> str:
-        command = (
-            "if command -v docker >/dev/null 2>&1; then "
-            "names=$(docker ps --format '{{.Names}}' | head -n 3); "
-            "if [ -z \"$names\" ]; then echo 'No running Docker containers.'; "
-            "else for name in $names; do echo \"## $name\"; docker logs --tail 30 \"$name\" 2>&1; "
-            "echo; done; fi; "
-            "else echo 'Docker is not installed or not in PATH.'; fi"
+    async def collect_docker_logs(self, container: str | None = None) -> str:
+        command = self._bash_script(
+            r"""
+set +e
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Docker is not installed or not in PATH."
+  exit 0
+fi
+target="${FLEETOPS_DOCKER_CONTAINER:-}"
+if [ -n "$target" ]; then
+  if ! docker container inspect "$target" >/dev/null 2>&1; then
+    echo "Container not found: $target"
+    exit 0
+  fi
+  names="$target"
+else
+  names=$(docker ps --format '{{.Names}}' 2>/dev/null | head -n 3)
+fi
+if [ -z "$names" ]; then
+  echo "No running Docker containers."
+  exit 0
+fi
+while IFS= read -r name; do
+  [ -z "$name" ] && continue
+  echo "## $name"
+  timeout 8s docker logs --timestamps --tail 50 "$name" 2>&1 | tail -n 50
+  echo
+done <<FLEETOPS_CONTAINERS
+$names
+FLEETOPS_CONTAINERS
+""",
+            FLEETOPS_DOCKER_CONTAINER=container,
         )
         return await self._collect_report(command)
 
@@ -692,8 +936,11 @@ if [ "$critical" -gt 0 ]; then echo "RESULT: CRITICAL"; elif [ "$warn" -gt 0 ]; 
     async def _run_report(self, conn: asyncssh.SSHClientConnection, command: str) -> str:
         result = await conn.run(command, check=False, timeout=self.config.timeouts.command_seconds)
         output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
-        if result.exit_status != 0 and not output:
-            return f"ERROR: remote command failed with exit status {result.exit_status}"
+        if result.exit_status != 0:
+            detail = output[:500] or "remote command returned no output"
+            raise SSHCommandError(
+                f"remote command failed with exit status {result.exit_status}: {detail}"
+            )
         return output
 
     async def _timed_parse(

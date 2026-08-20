@@ -11,9 +11,11 @@ from fleetops.interfaces.telegram.formatter import (
     format_audit,
     format_check_detail,
     format_docker,
+    format_docker_deep,
     format_docker_logs,
     format_greylist,
     format_health,
+    format_incident,
     format_journal,
     format_mail,
     format_mail_delivery,
@@ -21,6 +23,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_mail_logs,
     format_mail_queue,
     format_mail_rejections,
+    format_mail_search,
     format_mail_service_logs,
     format_mail_stats,
     format_mail_tls,
@@ -51,6 +54,20 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    time_window_commands = {
+        "mail-logs",
+        "mail-stats",
+        "mail-rejects",
+        "mail-delivery",
+    }
+    search_commands = {
+        "mail-search": "any",
+        "mail-from": "from",
+        "mail-to": "to",
+        "mail-ip": "ip",
+        "mail-domain": "domain",
+    }
+
     for command in (
         "bot",
         "health",
@@ -62,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
         "journal",
         "ports",
         "docker",
+        "docker-deep",
         "docker-logs",
         "mail",
         "mail-dns",
@@ -70,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
         "mail-stats",
         "mail-rejects",
         "mail-delivery",
+        "mail-search",
+        "mail-from",
+        "mail-to",
+        "mail-ip",
+        "mail-domain",
         "mail-service-logs",
         "greylist",
         "queue",
@@ -79,10 +102,34 @@ def build_parser() -> argparse.ArgumentParser:
         "updates",
         "security",
         "audit",
+        "incident",
         "snapshot",
         "status",
     ):
-        subparsers.add_parser(command)
+        command_parser = subparsers.add_parser(command)
+        if command == "docker-logs":
+            command_parser.add_argument(
+                "container",
+                nargs="?",
+                help="optional Docker container name; defaults to up to three running containers",
+            )
+        if command in time_window_commands:
+            command_parser.add_argument(
+                "--since",
+                help="limit mail log analysis to a window such as 30m, 1h, 24h, or 7d",
+            )
+        if command == "incident":
+            command_parser.add_argument(
+                "--since",
+                default="24h",
+                help="mail/statistics window for incident reports, such as 1h, 24h, or 7d",
+            )
+        if command in search_commands:
+            command_parser.add_argument("query", help="email, domain, IP, or text to search for")
+            command_parser.add_argument(
+                "--since",
+                help="limit mail search to a window such as 30m, 1h, 24h, or 7d",
+            )
 
     return parser
 
@@ -146,14 +193,15 @@ async def run_cli(
         "journal": diagnostics_service.get_journal,
         "ports": diagnostics_service.get_ports,
         "docker": diagnostics_service.get_docker,
-        "docker-logs": diagnostics_service.get_docker_logs,
+        "docker-deep": diagnostics_service.get_docker_deep,
+        "docker-logs": lambda: diagnostics_service.get_docker_logs(args.container),
         "mail": diagnostics_service.get_mail,
         "mail-dns": diagnostics_service.get_mail_dns,
         "mail-tls": diagnostics_service.get_mail_tls,
-        "mail-logs": diagnostics_service.get_mail_logs,
-        "mail-stats": diagnostics_service.get_mail_stats,
-        "mail-rejects": diagnostics_service.get_mail_rejections,
-        "mail-delivery": diagnostics_service.get_mail_delivery,
+        "mail-logs": lambda: diagnostics_service.get_mail_logs(args.since),
+        "mail-stats": lambda: diagnostics_service.get_mail_stats(args.since),
+        "mail-rejects": lambda: diagnostics_service.get_mail_rejections(args.since),
+        "mail-delivery": lambda: diagnostics_service.get_mail_delivery(args.since),
         "mail-service-logs": diagnostics_service.get_mail_service_logs,
         "greylist": diagnostics_service.get_greylist,
         "queue": diagnostics_service.get_mail_queue,
@@ -163,12 +211,14 @@ async def run_cli(
         "updates": diagnostics_service.get_updates,
         "security": diagnostics_service.get_security,
         "audit": diagnostics_service.get_audit,
+        "incident": lambda: diagnostics_service.get_incident(args.since),
     }
     formatters = {
         "services": format_services,
         "journal": format_journal,
         "ports": format_ports,
         "docker": format_docker,
+        "docker-deep": format_docker_deep,
         "docker-logs": format_docker_logs,
         "mail": format_mail,
         "mail-dns": format_mail_dns,
@@ -186,7 +236,39 @@ async def run_cli(
         "updates": format_updates,
         "security": format_security,
         "audit": format_audit,
+        "incident": format_incident,
     }
+    search_modes = {
+        "mail-search": "any",
+        "mail-from": "from",
+        "mail-to": "to",
+        "mail-ip": "ip",
+        "mail-domain": "domain",
+    }
+    if command in search_modes:
+        mode = search_modes[command]
+        raw = await diagnostics_service.get_mail_search(
+            mode=mode,
+            query=args.query,
+            since=args.since,
+        )
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "command": command,
+                        "mode": mode,
+                        "query": args.query,
+                        "since": args.since,
+                        "output": redact(raw),
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            print(format_mail_search(raw, mode=mode, query=args.query, since=args.since))
+        return 0
+
     if command in diagnostics_commands:
         raw = await diagnostics_commands[command]()
         if args.json:

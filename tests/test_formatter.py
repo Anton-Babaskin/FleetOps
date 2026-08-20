@@ -8,6 +8,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_docker,
     format_greylist,
     format_health,
+    format_incident,
     format_journal,
     format_mail,
     format_mail_delivery,
@@ -15,6 +16,7 @@ from fleetops.interfaces.telegram.formatter import (
     format_mail_logs,
     format_mail_queue,
     format_mail_rejections,
+    format_mail_search,
     format_mail_service_logs,
     format_mail_stats,
     format_mail_tls,
@@ -301,6 +303,27 @@ def test_mail_stats_formatter_summarizes_aggregate_sections() -> None:
     assert "Relay access denied" in text
 
 
+def test_mail_search_formatter_includes_query_context() -> None:
+    text = format_mail_search(
+        (
+            "Jul  1 10:04:01 box.example postfix/smtpd[125]: NOQUEUE: reject: "
+            "RCPT from bad.example[203.0.113.66]: 554 5.7.1 "
+            "<user@example.com>: Relay access denied; from=<bad@sender.test> "
+            "to=<user@example.com> proto=ESMTP helo=<bad.example>"
+        ),
+        mode="from",
+        query="sender.test",
+        since="24h",
+    )
+
+    assert "Mail search" in text
+    assert "Mode: from" in text
+    assert "Query: sender.test" in text
+    assert "Since: 24h" in text
+    assert "Rejected @ box.example" in text
+    assert "From: bad@sender.test" in text
+
+
 def test_mail_service_logs_formatter_has_title() -> None:
     text = format_mail_service_logs("systemd[1]: Started Postfix Mail Transport Agent.")
 
@@ -343,6 +366,54 @@ def test_audit_formatter_summarizes_findings() -> None:
     assert "🔴 Result: CRITICAL" in text
     assert "Critical: 1" in text
     assert "SSH root login" in text
+
+
+def test_incident_formatter_summarizes_sections() -> None:
+    text = format_incident(
+        "\n".join(
+            [
+                "### INCIDENT SUMMARY",
+                "host=demo (demo.example.com)",
+                "overall=warning",
+                "since=24h",
+                "collected_at=2026-07-03T10:00:00Z",
+                "",
+                "### HEALTH CHECKS",
+                "load|ok|0.2 / 0.1 / 0.1",
+                "disk|warning|/ is 88% full",
+                "",
+                "### SERVICES",
+                "backup.service loaded failed failed Demo backup failure",
+                "",
+                "### PORTS",
+                'tcp LISTEN 0 4096 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))',
+                "",
+                "### MAIL_STATS",
+                "== MAIL STATS SUMMARY ==",
+                "sent=4",
+                "rejected=3",
+                "greylisted=1",
+                "bounced=0",
+                "== TOP REJECT REASONS ==",
+                "3 Relay access denied",
+                "",
+                "### QUEUE",
+                "Mail queue is empty",
+                "",
+                "### SECURITY",
+                "ufw.service active",
+            ]
+        )
+    )
+
+    assert "Incident report" in text
+    assert "Overall: WARNING" in text
+    assert "disk: / is 88% full" in text
+    assert "backup.service" in text
+    assert "0.0.0.0:22" in text
+    assert "Rejected: 3" in text
+    assert "Relay access denied" in text
+    assert "Mail queue is empty" in text
 
 
 def test_docker_formatter_limits_raw_output() -> None:
